@@ -6,7 +6,7 @@ describe('health endpoint', () => {
   it('reports service readiness', async () => {
     const response = await request(app).get('/health');
     expect(response.status).toBe(200);
-    expect(response.body).toMatchObject({ status: 'ok', service: 'nova-connect-api' });
+    expect(response.body).toMatchObject({ status: 'ok', service: 'nova-connect-api', release: 'persistent-session-v1' });
   });
 
   it('returns a structured 404', async () => {

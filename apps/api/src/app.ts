@@ -27,7 +27,12 @@ app.use(express.json({ limit: '32kb' }));
 app.use(cookieParser());
 app.use('/api/v1/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 50, standardHeaders: 'draft-7', legacyHeaders: false }));
 app.use('/api', rateLimit({ windowMs: 60 * 1000, limit: 180, standardHeaders: 'draft-7', legacyHeaders: false }));
-app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'nova-connect-api', timestamp: new Date().toISOString() }));
+app.get('/health', (_req, res) => res.json({
+  status: 'ok',
+  service: 'nova-connect-api',
+  release: 'persistent-session-v1',
+  timestamp: new Date().toISOString(),
+}));
 app.use('/api/v1', apiRouter);
 if (env.NODE_ENV === 'production') {
   const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
