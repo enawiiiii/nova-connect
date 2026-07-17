@@ -4,6 +4,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { env, isLocalDevelopment } from './config/env.js';
 import { apiRouter } from './routes/index.js';
 import { errorHandler, notFound } from './utils/errors.js';
@@ -29,7 +30,8 @@ app.use('/api', rateLimit({ windowMs: 60 * 1000, limit: 180, standardHeaders: 'd
 app.get('/health', (_req, res) => res.json({ status: 'ok', service: 'nova-connect-api', timestamp: new Date().toISOString() }));
 app.use('/api/v1', apiRouter);
 if (env.NODE_ENV === 'production') {
-  const webDirectory = path.resolve(process.cwd(), 'apps/web/dist');
+  const moduleDirectory = path.dirname(fileURLToPath(import.meta.url));
+  const webDirectory = path.resolve(moduleDirectory, '../../web/dist');
   app.use(express.static(webDirectory, {
     index: false,
     immutable: true,
