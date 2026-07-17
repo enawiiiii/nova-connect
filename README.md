@@ -139,7 +139,8 @@ Never expose `SUPABASE_SERVICE_ROLE_KEY` as a `VITE_` variable or commit it. RLS
 | `BCRYPT_ROUNDS` | No | Defaults to `12` |
 | `COOKIE_SECURE` | Production | Set to `true` behind HTTPS |
 | `COOKIE_SAME_SITE` | No | Keep `lax` for the recommended same-origin Render deployment |
-| `SMTP_*` | Production | Sends mandatory verification mail; development logs the link when omitted |
+| `BREVO_API_KEY` | Recommended on Render Free | Sends verification mail over HTTPS because free Render services block SMTP ports |
+| `SMTP_*` | Alternative | SMTP fallback for hosting plans that allow outbound SMTP |
 | `TURN_URL` / `TURN_SECRET` | Recommended for production | Coturn REST secret used to issue time-limited relay credentials |
 | `VITE_API_URL` | Separate-origin only | Override the default same-origin API base |
 | `VITE_SOCKET_URL` | Separate-origin only | Override the default same-origin Socket.IO origin |
@@ -148,7 +149,7 @@ Generate signing secrets with a password manager or `openssl rand -base64 48`.
 
 ## Email and Google sign-in
 
-Email verification is fully wired. Add SMTP settings to send real mail; without SMTP, development prints the verification URL to the API console.
+Email verification is fully wired. On Render Free, add `BREVO_API_KEY` to send mail through Brevo's HTTPS API. On other hosts or paid Render plans, SMTP remains available as a fallback. Without either provider, development prints the verification URL to the API console.
 
 Google OAuth is intentionally feature-flagged off in the web UI. Before enabling it, configure Google as a Supabase Auth provider and add a server-side callback that exchanges the provider identity for a NOVA session. Do not turn on `VITE_GOOGLE_AUTH_ENABLED` until that callback is configured.
 
@@ -172,7 +173,7 @@ npm run lint
 1. Push the repository to a Git provider supported by Render.
 2. Apply both Supabase migrations before accepting registrations.
 3. In Render, choose **New → Blueprint** and select the repository. `render.yaml` creates one Node service named `nova-connect`.
-4. Enter the requested Supabase, SMTP, and optional TURN secrets.
+4. Enter the requested Supabase, Brevo (or SMTP), and optional TURN secrets.
 5. Set both `CLIENT_URL` and `APP_URL` to the service's exact public URL, such as `https://nova-connect.onrender.com`, then deploy.
 
 The API serves the built PWA in production, so REST, cookies, Socket.IO, and WebRTC signaling share one origin. This avoids third-party-cookie failures on Safari and iPhone. Render supplies managed HTTPS and the health check remains `/health`.
@@ -181,7 +182,7 @@ The API serves the built PWA in production, so REST, cookies, Socket.IO, and Web
 
 - Replace both JWT secrets and keep them in Render secret storage.
 - Set `COOKIE_SECURE=true`.
-- Configure SMTP and test verification links against the production web origin.
+- Configure Brevo on Render Free (or SMTP on a paid host) and test verification links against the production web origin.
 - Add Coturn with a server-side REST secret and test calls between Wi-Fi and mobile data.
 - Use a paid Render instance or equivalent for reliable always-on Socket.IO connections.
 - Add log aggregation, uptime monitoring, database backups, and Sentry-compatible error reporting.

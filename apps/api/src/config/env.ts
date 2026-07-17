@@ -22,6 +22,7 @@ const schema = z.object({
   LOCAL_DATA_PATH: z.string().default('.local/nova.json'),
   TURN_URL: z.string().optional(),
   TURN_SECRET: z.string().optional(),
+  BREVO_API_KEY: z.string().optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().default(587),
   SMTP_USER: z.string().optional(),
@@ -48,5 +49,6 @@ if (env.NODE_ENV === 'production') {
   if (!env.COOKIE_SECURE) throw new Error('COOKIE_SECURE must be true in production');
   if (env.COOKIE_SAME_SITE === 'none' && !env.COOKIE_SECURE) throw new Error('SameSite=None cookies must be secure');
   if (!env.CLIENT_URL.split(',').every((origin) => origin.trim().startsWith('https://'))) throw new Error('CLIENT_URL must use HTTPS in production');
-  if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) throw new Error('SMTP credentials are required in production for email verification');
+  const hasSmtp = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
+  if (!env.BREVO_API_KEY && !hasSmtp) throw new Error('BREVO_API_KEY or SMTP credentials are required in production for email verification');
 }
