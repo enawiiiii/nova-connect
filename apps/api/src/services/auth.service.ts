@@ -10,7 +10,6 @@ import { localVerificationPath, sendVerificationEmail } from './mail.service.js'
 
 interface Credentials { email: string; password: string }
 interface RegisterInput extends Credentials { username: string }
-const refreshRotationGraceMs = 30_000;
 
 async function createSession(user: { id: string; email: string; username: string }) {
   const refreshToken = createOpaqueToken();
@@ -139,19 +138,25 @@ export const authService = {
       const user = await localDb.read((state) => state.users.find((item) => item.id === token.user_id));
       if (!user) throw new AppError(401, 'Refresh token is invalid or expired', 'INVALID_REFRESH_TOKEN');
       if (env.REQUIRE_EMAIL_VERIFICATION && !user.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
+      const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 86_400_000);
       await localDb.mutate((state) => {
         const stored = state.refreshTokens.find((item) => item.id === token.id);
-        if (stored) stored.revoked_at = new Date(Date.now() + refreshRotationGraceMs).toISOString();
+        if (stored) {
+          stored.expires_at = expiresAt.toISOString();
+          stored.revoked_at = null;
+        }
       });
-      return createSession(user);
+      return { accessToken: signAccessToken(user), refreshToken, expiresAt };
     }
     const now = new Date().toISOString();
     const { data } = await db.from('refresh_tokens').select('*, users(id,email,username,email_verified)').eq('token_hash', hashToken(refreshToken)).or(`revoked_at.is.null,revoked_at.gt.${now}`).gt('expires_at', now).maybeSingle();
     if (!data?.users) throw new AppError(401, 'Refresh token is invalid or expired', 'INVALID_REFRESH_TOKEN');
     const storedUser = data.users as unknown as { id: string; email: string; username: string; email_verified: boolean };
     if (env.REQUIRE_EMAIL_VERIFICATION && !storedUser.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
-    await db.from('refresh_tokens').update({ revoked_at: new Date(Date.now() + refreshRotationGraceMs).toISOString() }).eq('id', data.id);
-    return createSession(storedUser);
+    const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 86_400_000);
+    const { error } = await db.from('refresh_tokens').update({ expires_at: expiresAt.toISOString(), revoked_at: null }).eq('id', data.id);
+    if (error) throw new AppError(503, 'Could not renew session', 'SESSION_RENEW_FAILED');
+    return { accessToken: signAccessToken(storedUser), refreshToken, expiresAt };
   },
 
   async logout(refreshToken?: string) {

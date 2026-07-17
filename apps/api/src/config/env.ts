@@ -14,7 +14,7 @@ const schema = z.object({
   JWT_ACCESS_SECRET: z.string().min(32).default('development-access-secret-change-me-now'),
   JWT_REFRESH_SECRET: z.string().min(32).default('development-refresh-secret-change-me'),
   ACCESS_TOKEN_TTL: z.string().default('15m'),
-  REFRESH_TOKEN_DAYS: z.coerce.number().int().positive().default(30),
+  REFRESH_TOKEN_DAYS: z.coerce.number().int().positive().max(400).default(400),
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
   COOKIE_SECURE: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   COOKIE_SAME_SITE: z.enum(['lax', 'strict', 'none']).default('lax'),

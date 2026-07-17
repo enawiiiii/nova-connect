@@ -69,9 +69,12 @@ describe('local account flow', () => {
     const refresh = await agent.post('/api/v1/auth/refresh');
     expect(refresh.status).toBe(200);
     expect(refresh.body.data.accessToken).toBeTypeOf('string');
-    const interruptedRotationRetry = await request(app).post('/api/v1/auth/refresh').set('Cookie', originalRefreshCookie!);
-    expect(interruptedRotationRetry.status).toBe(200);
-    expect(interruptedRotationRetry.body.data.accessToken).toBeTypeOf('string');
+    const secondTabRefresh = await request(app).post('/api/v1/auth/refresh').set('Cookie', originalRefreshCookie!);
+    expect(secondTabRefresh.status).toBe(200);
+    expect(secondTabRefresh.body.data.accessToken).toBeTypeOf('string');
+    const repeatedRefresh = await request(app).post('/api/v1/auth/refresh').set('Cookie', originalRefreshCookie!);
+    expect(repeatedRefresh.status).toBe(200);
+    expect(repeatedRefresh.headers['set-cookie']?.[0]).toContain('Max-Age=34560000');
 
     const missingCookie = await request(app).post('/api/v1/auth/refresh');
     expect(missingCookie.status).toBe(401);
