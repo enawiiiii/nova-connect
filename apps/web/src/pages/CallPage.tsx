@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Avatar } from '../components/Avatar';
 import { useWebRtcRoom } from '../hooks/useWebRtcRoom';
+import { playHangupTone, startOutgoingRingback, stopOutgoingRingback } from '../lib/call-sounds';
 import { copyText } from '../lib/platform';
 import { connectSocket } from '../lib/socket';
 import { useAuthStore } from '../stores/auth.store';
@@ -29,6 +30,10 @@ export function CallPage() {
   const navigate = useNavigate();
   const { user, demo, accessToken } = useAuthStore();
   const finishCall = useNovaStore((state) => state.finishCall);
+  const isOutgoing = useNovaStore((state) => {
+    const active = state.calls.find((call) => call.id === state.activeCallId);
+    return Boolean(active && active.roomId === roomId && active.callerId === user?.id);
+  });
   const [declinedBy, setDeclinedBy] = useState('');
   const [leaving, setLeaving] = useState(false);
   const [socketReady, setSocketReady] = useState(demo);
@@ -48,6 +53,13 @@ export function CallPage() {
   }, [accessToken, demo]);
 
   const rtc = useWebRtcRoom(roomId, callType, demo, socketReady);
+
+  useEffect(() => {
+    const waitingForAnswer = isOutgoing && rtc.joined && rtc.remotePeers.length === 0 && !rtc.error && !rtc.endedBy && !declinedBy && !leaving;
+    if (waitingForAnswer) startOutgoingRingback();
+    else stopOutgoingRingback();
+    return stopOutgoingRingback;
+  }, [declinedBy, isOutgoing, leaving, rtc.endedBy, rtc.error, rtc.joined, rtc.remotePeers.length]);
 
   useEffect(() => {
     if (!rtc.endedBy || isGroup || leaving) return;
@@ -83,6 +95,7 @@ export function CallPage() {
     if (isGroup || leaving || !rtc.joined || rtc.remotePeers.length > 0 || rtc.error) return;
     const timer = window.setTimeout(() => {
       setLeaving(true);
+      playHangupTone();
       rtc.leaveRoom();
       void finishCall('missed').finally(() => {
         navigate('/app/calls', { replace: true, state: { notice: 'لم يتم الرد على المكالمة.' } });
@@ -94,6 +107,7 @@ export function CallPage() {
   const leave = async () => {
     if (leaving) return;
     setLeaving(true);
+    playHangupTone();
     rtc.leaveRoom();
     try {
       await finishCall();

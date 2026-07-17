@@ -1,6 +1,7 @@
 import type { AppNotification, CallRecord, Message, PublicUser } from '@nova/shared';
 import { create } from 'zustand';
 import { api } from '../lib/api';
+import { playHangupTone, stopAllCallLoops, stopIncomingRingtone } from '../lib/call-sounds';
 import { demoCalls, demoFriends, demoMessages, demoNotifications, demoRequests, type Friend, type FriendRequest } from '../lib/demo-data';
 import { connectSocket, disconnectSocket } from '../lib/socket';
 import { createId, notificationPermission, notificationsSupported } from '../lib/platform';
@@ -98,6 +99,7 @@ export const useNovaStore = create<NovaState>((set, get) => ({
       if (notificationsSupported() && notificationPermission() === 'granted') new Notification(`${caller.username} is calling`, { body: `Incoming ${type} call`, icon: '/pwa-192.png', tag: roomId });
     });
     socket.off('call:declined').on('call:declined', ({ username, roomId }: { username: string; roomId: string }) => {
+      playHangupTone();
       set((state) => ({ notifications: [{ id: createId(), userId: useAuthStore.getState().user!.id, type: 'system', content: `${username} declined the call`, read: false, createdAt: new Date().toISOString() }, ...state.notifications] }));
       if (window.location.pathname.includes(roomId)) {
         window.dispatchEvent(new CustomEvent('nova:call-declined', { detail: { username } }));
@@ -107,6 +109,8 @@ export const useNovaStore = create<NovaState>((set, get) => ({
       }
     });
     socket.off('call:ended').on('call:ended', ({ roomId, username }: { roomId: string; username: string }) => {
+      stopIncomingRingtone();
+      playHangupTone();
       set((state) => ({
         incomingCall: state.incomingCall?.roomId === roomId ? null : state.incomingCall,
         calls: state.calls.map((call) => call.roomId === roomId && call.status !== 'missed' && call.status !== 'declined' ? { ...call, status: 'ended' as const } : call),
@@ -199,6 +203,7 @@ export const useNovaStore = create<NovaState>((set, get) => ({
   reset: () => {
     novaGeneration += 1;
     novaLoadPromise = null;
+    stopAllCallLoops();
     disconnectSocket();
     set(initial);
   },

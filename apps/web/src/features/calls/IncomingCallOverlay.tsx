@@ -2,6 +2,7 @@ import { Phone, PhoneOff, UsersRound, Video } from 'lucide-react';
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Avatar } from '../../components/Avatar';
+import { playHangupTone, startIncomingRingtone, stopIncomingRingtone } from '../../lib/call-sounds';
 import { getSocket } from '../../lib/socket';
 import { useNovaStore } from '../../stores/nova.store';
 
@@ -11,21 +12,29 @@ export function IncomingCallOverlay() {
   const clear = useNovaStore((state) => state.clearIncomingCall);
 
   useEffect(() => {
-    if (!incoming || !navigator.vibrate) return;
-    navigator.vibrate([250, 150, 250, 150, 500]);
-    return () => { navigator.vibrate(0); };
-  }, [incoming]);
+    if (!incoming) return;
+    startIncomingRingtone();
+    if (navigator.vibrate) navigator.vibrate([250, 150, 250, 150, 500]);
+    const timeout = window.setTimeout(clear, 45_000);
+    return () => {
+      window.clearTimeout(timeout);
+      stopIncomingRingtone();
+      if (navigator.vibrate) navigator.vibrate(0);
+    };
+  }, [clear, incoming]);
 
   if (!incoming) return null;
 
   const accept = () => {
     const target = `/app/call/${incoming.type}/${incoming.roomId}?mode=${incoming.group ? 'group' : 'individual'}`;
+    stopIncomingRingtone();
     clear();
     navigate(target);
   };
 
   const decline = () => {
     getSocket()?.emit('call:decline', { callerId: incoming.caller.id, roomId: incoming.roomId });
+    playHangupTone();
     clear();
   };
 

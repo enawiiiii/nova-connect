@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, leaveCallKeepalive } from '../lib/api';
+import { playHangupTone } from '../lib/call-sounds';
 import { getSocket } from '../lib/socket';
 import { useAuthStore } from '../stores/auth.store';
 
@@ -141,8 +142,10 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
       peers.current.delete(userId);
       pendingCandidates.current.delete(userId);
       setRemotePeers((items) => items.filter((item) => item.userId !== userId));
+      playHangupTone();
     };
     const onEnded = ({ username }: { username: string }) => {
+      playHangupTone();
       leaveSent = true;
       hasJoined = false;
       peerMap.forEach((peer) => peer.close());
