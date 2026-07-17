@@ -1,0 +1,50 @@
+services:
+  - type: web
+    name: nova-connect
+    runtime: node
+    plan: starter
+    rootDir: .
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start -w @nova/api
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20.18.1
+      - key: NODE_ENV
+        value: production
+      - key: CLIENT_URL
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: ACCESS_TOKEN_TTL
+        value: 15m
+      - key: REFRESH_TOKEN_DAYS
+        value: 30
+      - key: BCRYPT_ROUNDS
+        value: 12
+      - key: COOKIE_SECURE
+        value: true
+      - key: COOKIE_SAME_SITE
+        value: lax
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      - key: TURN_URL
+        sync: false
+      - key: TURN_SECRET
+        sync: false

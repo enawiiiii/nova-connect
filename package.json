@@ -1,0 +1,19 @@
+{
+  "name": "nova-connect",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,magenta \"npm run dev -w @nova/web\" \"npm run dev -w @nova/api\"",
+    "build": "npm run build -w @nova/shared && npm run build -w @nova/api && npm run build -w @nova/web",
+    "test": "npm run test -w @nova/api && npm run test -w @nova/web",
+    "typecheck": "npm run typecheck -w @nova/api && npm run typecheck -w @nova/web",
+    "lint": "npm run lint -w @nova/api && npm run lint -w @nova/web"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

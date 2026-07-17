@@ -1,0 +1,15 @@
+import { Router } from 'express';
+import authRoutes from './auth.routes.js';
+import userRoutes from './user.routes.js';
+import friendRoutes from './friend.routes.js';
+import messageRoutes from './message.routes.js';
+import callRoutes from './call.routes.js';
+import notificationRoutes from './notification.routes.js';
+
+export const apiRouter = Router();
+apiRouter.use('/auth', authRoutes);
+apiRouter.use('/users', userRoutes);
+apiRouter.use('/friends', friendRoutes);
+apiRouter.use('/messages', messageRoutes);
+apiRouter.use('/calls', callRoutes);
+apiRouter.use('/notifications', notificationRoutes);
