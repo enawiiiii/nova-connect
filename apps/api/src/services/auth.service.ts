@@ -78,11 +78,15 @@ export const authService = {
       if (existing) throw new AppError(409, 'Email or username is already in use', 'ACCOUNT_EXISTS');
       const createdAt = new Date().toISOString();
       const user: LocalUser = {
-        id: crypto.randomUUID(), username, email, password_hash: await bcrypt.hash(input.password, env.BCRYPT_ROUNDS), avatar: null, bio: null, status: 'offline', last_seen: createdAt, email_verified: false, created_at: createdAt,
+        id: crypto.randomUUID(), username, email, password_hash: await bcrypt.hash(input.password, env.BCRYPT_ROUNDS), avatar: null, bio: null, status: 'offline', last_seen: createdAt, email_verified: !env.REQUIRE_EMAIL_VERIFICATION, created_at: createdAt,
       };
       await localDb.mutate((state) => { state.users.push(user); });
+      if (!env.REQUIRE_EMAIL_VERIFICATION) {
+        const session = await createSession(user);
+        return { user: mapUser(user as unknown as Record<string, unknown>, true), requiresEmailVerification: false as const, ...session };
+      }
       const verification = await createVerification(user);
-      return { user: mapUser(user as unknown as Record<string, unknown>, true), ...verification };
+      return { user: mapUser(user as unknown as Record<string, unknown>, true), requiresEmailVerification: true as const, ...verification };
     }
     const [{ data: existingEmail }, { data: existingUsername }] = await Promise.all([
       db.from('users').select('id').eq('email', email).maybeSingle(),
@@ -91,11 +95,20 @@ export const authService = {
     if (existingEmail || existingUsername) throw new AppError(409, 'Email or username is already in use', 'ACCOUNT_EXISTS');
 
     const passwordHash = await bcrypt.hash(input.password, env.BCRYPT_ROUNDS);
-    const { data, error } = await db.from('users').insert({ email, username, password_hash: passwordHash }).select('*').single();
+    const { data, error } = await db.from('users').insert({
+      email,
+      username,
+      password_hash: passwordHash,
+      email_verified: !env.REQUIRE_EMAIL_VERIFICATION,
+    }).select('*').single();
     if (error || !data) throw new AppError(500, 'Could not create account', 'ACCOUNT_CREATE_FAILED');
 
+    if (!env.REQUIRE_EMAIL_VERIFICATION) {
+      const session = await createSession({ id: data.id, email, username });
+      return { user: mapUser(data, true), requiresEmailVerification: false as const, ...session };
+    }
     const verification = await createVerification({ id: data.id, email, username });
-    return { user: mapUser(data, true), ...verification };
+    return { user: mapUser(data, true), requiresEmailVerification: true as const, ...verification };
   },
 
   async login(input: Credentials) {
@@ -103,7 +116,7 @@ export const authService = {
       const email = input.email.trim().toLowerCase();
       const user = await localDb.read((state) => state.users.find((item) => item.email === email));
       if (!user || !(await bcrypt.compare(input.password, user.password_hash))) throw new AppError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
-      if (!user.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
+      if (env.REQUIRE_EMAIL_VERIFICATION && !user.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
       const session = await createSession(user);
       return { user: mapUser(user as unknown as Record<string, unknown>, true), ...session };
     }
@@ -111,7 +124,7 @@ export const authService = {
     if (error || !data || !(await bcrypt.compare(input.password, data.password_hash))) {
       throw new AppError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
     }
-    if (!data.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
+    if (env.REQUIRE_EMAIL_VERIFICATION && !data.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
     const session = await createSession({ id: data.id, email: data.email, username: data.username });
     return { user: mapUser(data, true), ...session };
   },
@@ -125,7 +138,7 @@ export const authService = {
       if (!token) throw new AppError(401, 'Refresh token is invalid or expired', 'INVALID_REFRESH_TOKEN');
       const user = await localDb.read((state) => state.users.find((item) => item.id === token.user_id));
       if (!user) throw new AppError(401, 'Refresh token is invalid or expired', 'INVALID_REFRESH_TOKEN');
-      if (!user.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
+      if (env.REQUIRE_EMAIL_VERIFICATION && !user.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
       await localDb.mutate((state) => {
         const stored = state.refreshTokens.find((item) => item.id === token.id);
         if (stored) stored.revoked_at = new Date(Date.now() + refreshRotationGraceMs).toISOString();
@@ -136,7 +149,7 @@ export const authService = {
     const { data } = await db.from('refresh_tokens').select('*, users(id,email,username,email_verified)').eq('token_hash', hashToken(refreshToken)).or(`revoked_at.is.null,revoked_at.gt.${now}`).gt('expires_at', now).maybeSingle();
     if (!data?.users) throw new AppError(401, 'Refresh token is invalid or expired', 'INVALID_REFRESH_TOKEN');
     const storedUser = data.users as unknown as { id: string; email: string; username: string; email_verified: boolean };
-    if (!storedUser.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
+    if (env.REQUIRE_EMAIL_VERIFICATION && !storedUser.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
     await db.from('refresh_tokens').update({ revoked_at: new Date(Date.now() + refreshRotationGraceMs).toISOString() }).eq('id', data.id);
     return createSession(storedUser);
   },
@@ -174,6 +187,7 @@ export const authService = {
   },
 
   async resendVerification(emailInput: string) {
+    if (!env.REQUIRE_EMAIL_VERIFICATION) return { emailSent: true, verificationUrl: undefined };
     const email = emailInput.trim().toLowerCase();
     if (isLocalDevelopment) {
       const user = await localDb.read((state) => state.users.find((item) => item.email === email));

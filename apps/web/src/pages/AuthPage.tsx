@@ -32,13 +32,24 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     setLoading(true);
     try {
       if (mode === 'register') {
-        const result = await api<{ user: PublicUser; requiresEmailVerification: true; emailSent: boolean; verificationUrl?: string }>('/auth/register', {
+        const result = await api<{
+          user: PublicUser;
+          requiresEmailVerification: boolean;
+          accessToken?: string;
+          emailSent?: boolean;
+          verificationUrl?: string;
+        }>('/auth/register', {
           method: 'POST',
           body: values,
         });
+        if (!result.requiresEmailVerification && result.accessToken) {
+          setSession(result.user, result.accessToken);
+          navigate('/app/chats');
+          return;
+        }
         setVerification({
           email: result.user.email ?? values.email,
-          emailSent: result.emailSent,
+          emailSent: Boolean(result.emailSent),
           ...(result.verificationUrl ? { verificationUrl: result.verificationUrl } : {}),
         });
         return;

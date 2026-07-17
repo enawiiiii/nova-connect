@@ -139,6 +139,7 @@ Never expose `SUPABASE_SERVICE_ROLE_KEY` as a `VITE_` variable or commit it. RLS
 | `BCRYPT_ROUNDS` | No | Defaults to `12` |
 | `COOKIE_SECURE` | Production | Set to `true` behind HTTPS |
 | `COOKIE_SAME_SITE` | No | Keep `lax` for the recommended same-origin Render deployment |
+| `REQUIRE_EMAIL_VERIFICATION` | No | Set to `false` only for temporary testing; defaults to `true` |
 | `BREVO_API_KEY` | Recommended on Render Free | Sends verification mail over HTTPS because free Render services block SMTP ports |
 | `SMTP_*` | Alternative | SMTP fallback for hosting plans that allow outbound SMTP |
 | `TURN_URL` / `TURN_SECRET` | Recommended for production | Coturn REST secret used to issue time-limited relay credentials |
@@ -149,7 +150,7 @@ Generate signing secrets with a password manager or `openssl rand -base64 48`.
 
 ## Email and Google sign-in
 
-Email verification is fully wired. On Render Free, add `BREVO_API_KEY` to send mail through Brevo's HTTPS API. On other hosts or paid Render plans, SMTP remains available as a fallback. Without either provider, development prints the verification URL to the API console.
+Email verification is fully wired but can be bypassed temporarily with `REQUIRE_EMAIL_VERIFICATION=false`. On Render Free, add `BREVO_API_KEY` before turning verification back on. On other hosts or paid Render plans, SMTP remains available as a fallback. Without either provider, development prints the verification URL to the API console.
 
 Google OAuth is intentionally feature-flagged off in the web UI. Before enabling it, configure Google as a Supabase Auth provider and add a server-side callback that exchanges the provider identity for a NOVA session. Do not turn on `VITE_GOOGLE_AUTH_ENABLED` until that callback is configured.
 

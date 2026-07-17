@@ -7,6 +7,18 @@ const cookieOptions = { httpOnly: true, secure: env.COOKIE_SECURE, sameSite: env
 export const authController = {
   async register(req: Request, res: Response) {
     const result = await authService.register(req.body);
+    if (!result.requiresEmailVerification) {
+      res.cookie('nova_refresh', result.refreshToken, cookieOptions);
+      res.status(201).json({
+        data: {
+          user: result.user,
+          accessToken: result.accessToken,
+          requiresEmailVerification: false,
+        },
+        message: 'Account created.',
+      });
+      return;
+    }
     res.status(201).json({
       data: {
         user: result.user,
