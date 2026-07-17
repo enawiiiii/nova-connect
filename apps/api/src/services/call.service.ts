@@ -7,6 +7,74 @@ import { AppError } from '../utils/errors.js';
 import { mapCall } from '../utils/mappers.js';
 import { friendService } from './friend.service.js';
 
+const activeCallStatuses = ['ringing', 'answered'] as const;
+let callStartQueue = Promise.resolve();
+
+async function serializeCallStart<T>(operation: () => Promise<T>) {
+  const previous = callStartQueue;
+  let release: () => void = () => undefined;
+  callStartQueue = new Promise<void>((resolve) => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
+async function expireStaleRingingCalls() {
+  const staleCutoff = new Date(Date.now() - 60_000).toISOString();
+  if (isLocalDevelopment) {
+    await localDb.mutate((state) => {
+      state.calls.forEach((call) => {
+        if (call.status === 'ringing' && call.created_at < staleCutoff) call.status = 'missed';
+      });
+    });
+    return;
+  }
+  const { error } = await db.from('calls').update({ status: 'missed' }).eq('status', 'ringing').lt('created_at', staleCutoff);
+  if (error) throw new AppError(500, 'Could not check call availability', 'CALL_AVAILABILITY_FAILED');
+}
+
+async function busyUsers(userIds: string[]) {
+  const uniqueIds = [...new Set(userIds)];
+  if (isLocalDevelopment) return localDb.read((state) => {
+    const busy = new Set<string>();
+    state.calls.filter((call) => activeCallStatuses.includes(call.status as typeof activeCallStatuses[number])).forEach((call) => {
+      [call.caller_id, ...(call.receiver_id ? [call.receiver_id] : []), ...(call.participant_ids ?? [])]
+        .filter((userId) => uniqueIds.includes(userId))
+        .forEach((userId) => busy.add(userId));
+    });
+    return busy;
+  });
+
+  const [callerResult, receiverResult, participationResult] = await Promise.all([
+    db.from('calls').select('id,caller_id,receiver_id').in('status', activeCallStatuses).in('caller_id', uniqueIds),
+    db.from('calls').select('id,caller_id,receiver_id').in('status', activeCallStatuses).in('receiver_id', uniqueIds),
+    db.from('call_participants').select('call_id,user_id').in('user_id', uniqueIds),
+  ]);
+  if (callerResult.error || receiverResult.error || participationResult.error) {
+    throw new AppError(500, 'Could not check call availability', 'CALL_AVAILABILITY_FAILED');
+  }
+
+  const participantCallIds = [...new Set((participationResult.data ?? []).map((row) => row.call_id))];
+  const participantCalls = participantCallIds.length
+    ? await db.from('calls').select('id').in('id', participantCallIds).in('status', activeCallStatuses)
+    : { data: [], error: null };
+  if (participantCalls.error) throw new AppError(500, 'Could not check call availability', 'CALL_AVAILABILITY_FAILED');
+
+  const busy = new Set<string>();
+  [...(callerResult.data ?? []), ...(receiverResult.data ?? [])].forEach((call) => {
+    if (call.caller_id && uniqueIds.includes(call.caller_id)) busy.add(call.caller_id);
+    if (call.receiver_id && uniqueIds.includes(call.receiver_id)) busy.add(call.receiver_id);
+  });
+  const activeParticipantCallIds = new Set((participantCalls.data ?? []).map((call) => call.id));
+  (participationResult.data ?? []).forEach((row) => {
+    if (activeParticipantCallIds.has(row.call_id)) busy.add(row.user_id);
+  });
+  return busy;
+}
+
 export const callService = {
   iceServers(userId: string) {
     const servers: Array<{ urls: string[] | string; username?: string; credential?: string }> = [
@@ -116,21 +184,35 @@ export const callService = {
     const friendshipChecks = await Promise.all(targets.map((targetId) => friendService.areFriends(callerId, targetId)));
     if (friendshipChecks.some((allowed) => !allowed)) throw new AppError(403, 'Calls can only be started with friends', 'CALL_NOT_ALLOWED');
 
-    if (isLocalDevelopment) return localDb.mutate((state) => {
-      if (state.calls.some((item) => item.room_id === roomId)) throw new AppError(409, 'This call room already exists', 'CALL_ROOM_EXISTS');
-      const call: LocalCall = { id: crypto.randomUUID(), caller_id: callerId, receiver_id: receiverId, room_id: roomId, call_type: callType, duration: 0, status: 'ringing', participant_ids: participants, created_at: new Date().toISOString() };
-      state.calls.push(call);
-      return mapCall(call as unknown as Record<string, unknown>);
+    return serializeCallStart(async () => {
+      await expireStaleRingingCalls();
+      const busy = await busyUsers([callerId, ...targets]);
+      if (busy.has(callerId)) throw new AppError(409, 'You are already in another call', 'CALLER_BUSY');
+      const busyTargets = targets.filter((userId) => busy.has(userId));
+      if (busyTargets.length) {
+        throw new AppError(
+          409,
+          callType === 'group' ? 'One or more selected friends are busy' : 'This person is busy on another call',
+          callType === 'group' ? 'PARTICIPANT_BUSY' : 'USER_BUSY',
+        );
+      }
+
+      if (isLocalDevelopment) return localDb.mutate((state) => {
+        if (state.calls.some((item) => item.room_id === roomId)) throw new AppError(409, 'This call room already exists', 'CALL_ROOM_EXISTS');
+        const call: LocalCall = { id: crypto.randomUUID(), caller_id: callerId, receiver_id: receiverId, room_id: roomId, call_type: callType, duration: 0, status: 'ringing', participant_ids: participants, created_at: new Date().toISOString() };
+        state.calls.push(call);
+        return mapCall(call as unknown as Record<string, unknown>);
+      });
+      const { data, error } = await db.from('calls').insert({ caller_id: callerId, receiver_id: receiverId, call_type: callType, room_id: roomId }).select('*').single();
+      if (error || !data) throw new AppError(500, 'Could not start call');
+      const callParticipants = [...new Set([callerId, ...(receiverId ? [receiverId] : []), ...participants])];
+      const { error: participantError } = await db.from('call_participants').insert(callParticipants.map((userId) => ({ call_id: data.id, user_id: userId, joined_at: userId === callerId ? new Date().toISOString() : null })));
+      if (participantError) {
+        await db.from('calls').delete().eq('id', data.id);
+        throw new AppError(500, 'Could not prepare call participants', 'CALL_PARTICIPANTS_FAILED');
+      }
+      return mapCall(data);
     });
-    const { data, error } = await db.from('calls').insert({ caller_id: callerId, receiver_id: receiverId, call_type: callType, room_id: roomId }).select('*').single();
-    if (error || !data) throw new AppError(500, 'Could not start call');
-    const callParticipants = [...new Set([callerId, ...(receiverId ? [receiverId] : []), ...participants])];
-    const { error: participantError } = await db.from('call_participants').insert(callParticipants.map((userId) => ({ call_id: data.id, user_id: userId, joined_at: userId === callerId ? new Date().toISOString() : null })));
-    if (participantError) {
-      await db.from('calls').delete().eq('id', data.id);
-      throw new AppError(500, 'Could not prepare call participants', 'CALL_PARTICIPANTS_FAILED');
-    }
-    return mapCall(data);
   },
   async finish(userId: string, callId: string, duration: number, status: string) {
     if (isLocalDevelopment) return localDb.mutate((state) => {

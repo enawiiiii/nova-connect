@@ -1,4 +1,4 @@
-import { Camera, CameraOff, Copy, Mic, MicOff, MonitorUp, PhoneOff, ShieldCheck, Sparkles } from 'lucide-react';
+import { Camera, CameraOff, Copy, Mic, MicOff, MonitorUp, PhoneOff, ShieldCheck, Sparkles, SwitchCamera } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -115,7 +115,7 @@ export function CallPage() {
       </header>
 
       <main className={`video-grid count-${rtc.remotePeers.length + 1}`}>
-        <div className={`local-video ${rtc.cameraOff ? 'camera-off' : ''}`}>
+        <div className={`local-video ${rtc.cameraOff ? 'camera-off' : ''} ${rtc.facingMode === 'environment' ? 'environment-camera' : ''}`}>
           <video ref={rtc.localVideo} muted autoPlay playsInline />
           {rtc.cameraOff && <div><Avatar user={user!} size="xl" /><span className="voice-wave"><i /><i /><i /><i /></span></div>}
           <span>{t('common.you', { defaultValue: 'أنت' })}</span>
@@ -136,6 +136,7 @@ export function CallPage() {
       <footer className="call-controls">
         <button className={rtc.muted ? 'off' : ''} onClick={rtc.toggleMute}>{rtc.muted ? <MicOff /> : <Mic />}<span>{t('call.mute')}</span></button>
         {callType === 'video' && <button className={rtc.cameraOff ? 'off' : ''} onClick={rtc.toggleCamera}>{rtc.cameraOff ? <CameraOff /> : <Camera />}<span>{t('call.camera')}</span></button>}
+        {callType === 'video' && rtc.supportsCameraFlip && <button disabled={rtc.switchingCamera || rtc.sharingScreen} onClick={() => void rtc.switchCamera()}><SwitchCamera /><span>{t('call.flip')}</span></button>}
         {rtc.supportsScreenShare && <button onClick={() => void rtc.shareScreen()}><MonitorUp /><span>{t('call.share')}</span></button>}
         <button className="leave" disabled={leaving} onClick={() => void leave()}><PhoneOff /><span>{t('call.leave')}</span></button>
       </footer>

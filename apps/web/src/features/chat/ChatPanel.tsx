@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import type { Friend } from '../../lib/demo-data';
+import { ApiError } from '../../lib/api';
 import { connectSocket, getSocket } from '../../lib/socket';
 import { createId } from '../../lib/platform';
 import { useAuthStore } from '../../stores/auth.store';
@@ -54,7 +55,9 @@ export function ChatPanel({ friend }: { friend: Friend }) {
       connectSocket(accessToken).emit('call:invite', { receiverId: friend.id, roomId, type });
       navigate(`/app/call/${type}/${roomId}?mode=individual`);
     } catch (error) {
-      setCallError(error instanceof Error ? error.message : 'تعذر بدء المكالمة');
+      if (error instanceof ApiError && error.code === 'USER_BUSY') setCallError(t('call.busy'));
+      else if (error instanceof ApiError && error.code === 'CALLER_BUSY') setCallError(t('call.alreadyBusy'));
+      else setCallError(error instanceof Error ? error.message : 'تعذر بدء المكالمة');
     } finally {
       setStartingCall(false);
     }

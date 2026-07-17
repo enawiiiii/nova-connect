@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Avatar } from '../components/Avatar';
 import { PageHeader } from '../components/PageHeader';
+import { ApiError } from '../lib/api';
 import { createId } from '../lib/platform';
 import { connectSocket } from '../lib/socket';
 import { useAuthStore } from '../stores/auth.store';
@@ -34,7 +35,9 @@ export function CallsPage() {
       connectSocket(accessToken).emit('call:invite', { receiverId, roomId, type });
       navigate(`/app/call/${type}/${roomId}?mode=individual`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'تعذر بدء المكالمة الفردية');
+      if (cause instanceof ApiError && cause.code === 'USER_BUSY') setError(t('call.busy'));
+      else if (cause instanceof ApiError && cause.code === 'CALLER_BUSY') setError(t('call.alreadyBusy'));
+      else setError(cause instanceof Error ? cause.message : 'تعذر بدء المكالمة الفردية');
     } finally {
       setStarting(false);
     }
@@ -54,7 +57,9 @@ export function CallsPage() {
       setSelected([]);
       navigate(`/app/call/${selectedType}/${roomId}?mode=group`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'تعذر بدء المكالمة الجماعية');
+      if (cause instanceof ApiError && cause.code === 'PARTICIPANT_BUSY') setError(t('call.groupBusy'));
+      else if (cause instanceof ApiError && cause.code === 'CALLER_BUSY') setError(t('call.alreadyBusy'));
+      else setError(cause instanceof Error ? cause.message : 'تعذر بدء المكالمة الجماعية');
     } finally {
       setStarting(false);
     }

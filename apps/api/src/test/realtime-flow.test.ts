@@ -63,6 +63,7 @@ describe('authenticated realtime flow', () => {
   it('keeps private fields private and completes friendship, messaging, and individual calling', async () => {
     const first = await createVerifiedAccount(`First_${suffix}`);
     const second = await createVerifiedAccount(`Second_${suffix}`);
+    const third = await createVerifiedAccount(`Third_${suffix}`);
     const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
     const search = await first.agent.get(`/api/v1/users/search?q=${encodeURIComponent(second.username)}`).set(auth(first.accessToken));
@@ -82,6 +83,11 @@ describe('authenticated realtime flow', () => {
     expect(friends.body.data[0]).toMatchObject({ id: second.id });
     expect(friends.body.data[0].email).toBeUndefined();
 
+    const thirdRequest = await second.agent.post('/api/v1/friends/requests').set(auth(second.accessToken)).send({ receiverId: third.id });
+    expect(thirdRequest.status).toBe(201);
+    const thirdIncomingRequests = await third.agent.get('/api/v1/friends/requests').set(auth(third.accessToken));
+    expect((await third.agent.patch(`/api/v1/friends/requests/${thirdIncomingRequests.body.data[0].id}`).set(auth(third.accessToken)).send({ action: 'accept' })).status).toBe(204);
+
     const firstSocket = await connectedClient(first.accessToken);
     const secondSocket = await connectedClient(second.accessToken);
     try {
@@ -94,6 +100,24 @@ describe('authenticated realtime flow', () => {
       const roomId = crypto.randomUUID();
       const call = await first.agent.post('/api/v1/calls').set(auth(first.accessToken)).send({ receiverId: second.id, participantIds: [], callType: 'voice', roomId });
       expect(call.status).toBe(201);
+
+      const externalCaller = await third.agent.post('/api/v1/calls').set(auth(third.accessToken)).send({
+        receiverId: second.id,
+        participantIds: [],
+        callType: 'video',
+        roomId: crypto.randomUUID(),
+      });
+      expect(externalCaller.status).toBe(409);
+      expect(externalCaller.body.error.code).toBe('USER_BUSY');
+
+      const alreadyCalling = await second.agent.post('/api/v1/calls').set(auth(second.accessToken)).send({
+        receiverId: third.id,
+        participantIds: [],
+        callType: 'voice',
+        roomId: crypto.randomUUID(),
+      });
+      expect(alreadyCalling.status).toBe(409);
+      expect(alreadyCalling.body.error.code).toBe('CALLER_BUSY');
 
       const incomingCall = new Promise<{ caller: Record<string, unknown>; roomId: string }>((resolve) => secondSocket.once('call:incoming', resolve));
       firstSocket.emit('call:invite', { receiverId: second.id, roomId, type: 'voice' });

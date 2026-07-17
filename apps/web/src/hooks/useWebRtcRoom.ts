@@ -9,6 +9,8 @@ interface RemotePeer {
   stream: MediaStream;
 }
 
+type CameraFacingMode = 'user' | 'environment';
+
 const fallbackIceServers: RTCIceServer[] = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
 ];
@@ -36,6 +38,10 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
   const [error, setError] = useState<string | null>(null);
   const [joined, setJoined] = useState(false);
   const [endedBy, setEndedBy] = useState<string | null>(null);
+  const [facingMode, setFacingMode] = useState<CameraFacingMode>('user');
+  const [supportsCameraFlip, setSupportsCameraFlip] = useState(false);
+  const [switchingCamera, setSwitchingCamera] = useState(false);
+  const [sharingScreen, setSharingScreen] = useState(false);
   const supportsScreenShare = Boolean(navigator.mediaDevices?.getDisplayMedia);
 
   const createPeer = useCallback((userId: string, username = 'Friend') => {
@@ -194,13 +200,18 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
         if (!navigator.mediaDevices?.getUserMedia) throw new DOMException('Media devices unavailable', 'NotSupportedError');
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true },
-          video: type === 'video' ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } : false,
+          video: type === 'video' ? { facingMode: { ideal: 'user' }, width: { ideal: 1280 }, height: { ideal: 720 } } : false,
         });
         if (!active) {
           stream.getTracks().forEach((track) => track.stop());
           return;
         }
         localStream.current = stream;
+        if (type === 'video' && navigator.mediaDevices.enumerateDevices) {
+          void navigator.mediaDevices.enumerateDevices()
+            .then((devices) => setSupportsCameraFlip(devices.filter((device) => device.kind === 'videoinput').length > 1))
+            .catch(() => setSupportsCameraFlip(false));
+        }
         if (localVideo.current) {
           localVideo.current.srcObject = stream;
           void localVideo.current.play().catch(() => undefined);
@@ -252,16 +263,71 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
     setCameraOff(next);
   };
 
+  const switchCamera = async () => {
+    if (type !== 'video' || switchingCamera || sharingScreen || !navigator.mediaDevices?.getUserMedia) return;
+    const stream = localStream.current;
+    if (!stream) return;
+    const previousFacingMode = facingMode;
+    const nextFacingMode: CameraFacingMode = facingMode === 'user' ? 'environment' : 'user';
+    const previousTrack = stream.getVideoTracks()[0];
+    setSwitchingCamera(true);
+    setError(null);
+
+    const acquireTrack = async (mode: CameraFacingMode) => {
+      const cameraStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      const track = cameraStream.getVideoTracks()[0];
+      if (!track) {
+        cameraStream.getTracks().forEach((item) => item.stop());
+        throw new Error('No camera track was returned');
+      }
+      return track;
+    };
+
+    try {
+      previousTrack?.stop();
+      if (previousTrack) stream.removeTrack(previousTrack);
+      let replacement: MediaStreamTrack;
+      let selectedFacingMode = nextFacingMode;
+      try {
+        replacement = await acquireTrack(nextFacingMode);
+      } catch {
+        selectedFacingMode = previousFacingMode;
+        replacement = await acquireTrack(previousFacingMode);
+      }
+      replacement.enabled = !cameraOff;
+      stream.addTrack(replacement);
+      await Promise.all([...peers.current.values()].map(async (peer) => {
+        const sender = peer.getSenders().find((item) => item.track?.kind === 'video');
+        if (sender) await sender.replaceTrack(replacement);
+        else peer.addTrack(replacement, stream);
+      }));
+      if (localVideo.current) {
+        localVideo.current.srcObject = stream;
+        await localVideo.current.play().catch(() => undefined);
+      }
+      setFacingMode(selectedFacingMode);
+    } catch {
+      setError('تعذر تبديل الكاميرا على هذا الجهاز. تحقق من إذن الكاميرا وحاول مجددًا.');
+    } finally {
+      setSwitchingCamera(false);
+    }
+  };
+
   const shareScreen = async () => {
     try {
       if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('Screen sharing is unavailable');
       const screen = await navigator.mediaDevices.getDisplayMedia({ video: true });
       const track = screen.getVideoTracks()[0];
       if (!track) return;
+      setSharingScreen(true);
       peers.current.forEach((peer) => {
         void peer.getSenders().find((sender) => sender.track?.kind === 'video')?.replaceTrack(track);
       });
       track.onended = () => {
+        setSharingScreen(false);
         const camera = localStream.current?.getVideoTracks()[0];
         if (camera) {
           peers.current.forEach((peer) => {
@@ -270,6 +336,7 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
         }
       };
     } catch {
+      setSharingScreen(false);
       setError('مشاركة الشاشة غير متاحة على هذا الجهاز أو لم يتم السماح بها.');
     }
   };
@@ -284,9 +351,14 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
     error,
     joined,
     endedBy,
+    facingMode,
+    supportsCameraFlip,
+    switchingCamera,
+    sharingScreen,
     supportsScreenShare,
     toggleMute,
     toggleCamera,
+    switchCamera,
     shareScreen,
     leaveRoom,
   };

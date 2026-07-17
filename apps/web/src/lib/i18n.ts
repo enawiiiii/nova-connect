@@ -13,7 +13,7 @@ const resources = {
     calls: { title: 'Calls', subtitle: 'Moments that feel closer', startRoom: 'Start group room', history: 'Recent calls', voice: 'Voice', video: 'Video', missed: 'Missed', minutes: '{{count}} min', ready: 'Ready when you are', roomBody: 'Start a private room for up to 8 friends.', startVideo: 'Start video room' },
     profile: { title: 'Your profile', subtitle: 'How your circle sees you', bio: 'Bio', status: 'Status', username: 'Username', preview: 'Profile preview' },
     settings: { title: 'Settings', subtitle: 'Make NOVA feel like yours', appearance: 'Appearance', dark: 'Deep space', light: 'Soft light', language: 'Language & direction', notifications: 'Notifications', notifBody: 'Messages, friend requests, and incoming calls', privacy: 'Privacy & security', privacyBody: 'Manage sessions and blocked accounts', install: 'Install NOVA Connect', installBody: 'Add the app to this device for a faster, focused experience', installAction: 'Install app', signout: 'Sign out' },
-    call: { encrypted: 'Peer connection secured', inviting: 'Waiting for friends to join…', mute: 'Mute', camera: 'Camera', share: 'Share screen', leave: 'Leave call', participants: '{{count}} / 8 participants' },
+    call: { encrypted: 'Peer connection secured', inviting: 'Waiting for friends to join…', mute: 'Mute', camera: 'Camera', flip: 'Flip camera', share: 'Share screen', leave: 'Leave call', busy: 'This person is busy on another call.', alreadyBusy: 'You are already in another call.', groupBusy: 'One or more selected friends are busy.', participants: '{{count}} / 8 participants' },
   } },
   ar: { translation: {
     nav: { chats: 'المحادثات', friends: 'الأصدقاء', calls: 'المكالمات', profile: 'الملف الشخصي', settings: 'الإعدادات' },
@@ -25,7 +25,7 @@ const resources = {
     calls: { title: 'المكالمات', subtitle: 'لحظات تشعرك بالقرب', startRoom: 'بدء غرفة جماعية', history: 'المكالمات الأخيرة', voice: 'صوتية', video: 'فيديو', missed: 'فائتة', minutes: '{{count}} د', ready: 'جاهز عندما تكون جاهزاً', roomBody: 'ابدأ غرفة خاصة لما يصل إلى 8 أصدقاء.', startVideo: 'بدء غرفة فيديو' },
     profile: { title: 'ملفك الشخصي', subtitle: 'كيف يراك أصدقاؤك', bio: 'النبذة', status: 'الحالة', username: 'اسم المستخدم', preview: 'معاينة الملف' },
     settings: { title: 'الإعدادات', subtitle: 'اجعل NOVA كما تحب', appearance: 'المظهر', dark: 'فضاء عميق', light: 'ضوء هادئ', language: 'اللغة والاتجاه', notifications: 'الإشعارات', notifBody: 'الرسائل وطلبات الصداقة والمكالمات الواردة', privacy: 'الخصوصية والأمان', privacyBody: 'إدارة الجلسات والحسابات المحظورة', install: 'تثبيت NOVA Connect', installBody: 'أضف التطبيق إلى جهازك لتجربة أسرع وأكثر تركيزاً', installAction: 'تثبيت التطبيق', signout: 'تسجيل الخروج' },
-    call: { encrypted: 'اتصال مباشر آمن', inviting: 'بانتظار انضمام الأصدقاء…', mute: 'كتم', camera: 'الكاميرا', share: 'مشاركة الشاشة', leave: 'إنهاء', participants: '{{count}} / 8 مشاركين' },
+    call: { encrypted: 'اتصال مباشر آمن', inviting: 'بانتظار انضمام الأصدقاء…', mute: 'كتم', camera: 'الكاميرا', flip: 'قلب الكاميرا', share: 'مشاركة الشاشة', leave: 'إنهاء', busy: 'هذا الشخص مشغول في مكالمة أخرى.', alreadyBusy: 'أنت داخل مكالمة أخرى بالفعل.', groupBusy: 'يوجد شخص مشغول ضمن الأصدقاء المحددين.', participants: '{{count}} / 8 مشاركين' },
   } },
 };
 
