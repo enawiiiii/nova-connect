@@ -7,9 +7,31 @@ import { validate } from '../middlewares/validate.middleware.js';
 import { asyncHandler } from '../utils/async-handler.js';
 
 const router = Router();
+const reportIdParams = z.object({ id: z.string().uuid() });
+const reportStatus = z.enum(['open', 'reviewing', 'resolved', 'dismissed']);
+const moderationAction = z.enum(['none', 'warn', 'protect_reporter', 'revoke_sessions', 'suspend_24h', 'suspend_7d', 'restore_account']);
 router.use(authenticate, asyncHandler(requireAdmin));
 router.get('/overview', asyncHandler(adminController.overview));
-router.get('/reports', asyncHandler(adminController.reports));
-router.patch('/reports/:id', validate(z.object({ body: z.object({ status: z.enum(['open', 'reviewing', 'resolved', 'dismissed']) }).strict(), params: z.object({ id: z.string().uuid() }), query: z.any() })), asyncHandler(adminController.updateReport));
+router.get('/reports', validate(z.object({
+  body: z.any(),
+  params: z.any(),
+  query: z.object({
+    status: reportStatus.optional(),
+    reason: z.enum(['spam', 'harassment', 'impersonation', 'unsafe', 'other']).optional(),
+    search: z.string().trim().max(100).optional(),
+    page: z.coerce.number().int().min(1).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  }).strict(),
+})), asyncHandler(adminController.reports));
+router.get('/reports/:id', validate(z.object({ body: z.any(), params: reportIdParams, query: z.any() })), asyncHandler(adminController.reportDetail));
+router.patch('/reports/:id', validate(z.object({
+  body: z.object({
+    status: reportStatus.optional(),
+    action: moderationAction.optional(),
+    note: z.string().trim().max(1000).optional(),
+  }).strict().refine((value) => value.status !== undefined || value.action !== undefined || Boolean(value.note), 'Choose a status, action, or note'),
+  params: reportIdParams,
+  query: z.any(),
+})), asyncHandler(adminController.updateReport));
 router.get('/errors', asyncHandler(adminController.errors));
 export default router;

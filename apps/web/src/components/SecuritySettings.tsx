@@ -1,6 +1,6 @@
 import type { PublicUser } from '@nova/shared';
 import { KeyRound, ShieldCheck, Smartphone, Unlock } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuthStore } from '../stores/auth.store';
 
@@ -22,7 +22,7 @@ export function SecuritySettings() {
   const [code, setCode] = useState('');
   const [message, setMessage] = useState('');
 
-  const reload = async () => {
+  const reload = useCallback(async () => {
     if (!token) return;
     const [deviceSessions, blockedUsers] = await Promise.all([
       api<DeviceSession[]>('/auth/sessions', { token }),
@@ -30,8 +30,8 @@ export function SecuritySettings() {
     ]);
     setSessions(deviceSessions);
     setBlocked(blockedUsers);
-  };
-  useEffect(() => { void reload().catch(() => setMessage('تعذر تحميل إعدادات الأمان.')); }, [token]);
+  }, [token]);
+  useEffect(() => { void reload().catch(() => setMessage('تعذر تحميل إعدادات الأمان.')); }, [reload]);
 
   const changePassword = async () => {
     if (!token) return;

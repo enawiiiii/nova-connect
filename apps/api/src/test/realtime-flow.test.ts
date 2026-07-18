@@ -29,6 +29,7 @@ async function createVerifiedAccount(username: string) {
     agent,
     id: login.body.data.user.id as string,
     username,
+    email,
     accessToken: login.body.data.accessToken as string,
   };
 }
@@ -95,7 +96,8 @@ describe('authenticated realtime flow', () => {
     await localDb.mutate((state) => { const admin = state.users.find((item) => item.id === first.id); if (admin) admin.is_admin = true; });
     const adminReports = await first.agent.get('/api/v1/admin/reports').set(auth(first.accessToken));
     expect(adminReports.status).toBe(200);
-    expect(adminReports.body.data.some((item: { id: string }) => item.id === report.body.data.report.id)).toBe(true);
+    expect(adminReports.body.data.items.some((item: { id: string }) => item.id === report.body.data.report.id)).toBe(true);
+    expect(adminReports.body.data.summary.open).toBeGreaterThan(0);
 
     const firstSocket = await connectedClient(first.accessToken);
     const secondSocket = await connectedClient(second.accessToken);
@@ -153,5 +155,46 @@ describe('authenticated realtime flow', () => {
       firstSocket.disconnect();
       secondSocket.disconnect();
     }
+
+    const reportId = report.body.data.report.id as string;
+    const detail = await first.agent.get(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken));
+    expect(detail.status).toBe(200);
+    expect(detail.body.data).toMatchObject({
+      id: reportId,
+      reporter: { id: first.id, username: first.username },
+      reported: { id: second.id, username: second.username },
+      status: 'open',
+    });
+
+    const reviewing = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
+      status: 'reviewing',
+      action: 'warn',
+      note: 'Reviewed in the automated moderation flow.',
+    });
+    expect(reviewing.status).toBe(200);
+    expect(reviewing.body.data.status).toBe('reviewing');
+    expect(reviewing.body.data.history[0]).toMatchObject({ action: 'warn', note: 'Reviewed in the automated moderation flow.' });
+    const warnings = await second.agent.get('/api/v1/notifications').set(auth(second.accessToken));
+    expect(warnings.body.data.some((item: { type: string; content: string }) => item.type === 'system' && item.content.includes('تنبيه'))).toBe(true);
+
+    const suspended = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
+      status: 'resolved',
+      action: 'suspend_24h',
+      note: 'Confirmed violation; temporary suspension applied.',
+    });
+    expect(suspended.status).toBe(200);
+    expect(suspended.body.data.accountModeration.suspendedUntil).toBeTruthy();
+    const blockedLogin = await second.agent.post('/api/v1/auth/login').send({ email: second.email, password: 'StrongPass123' });
+    expect(blockedLogin.status).toBe(403);
+    expect(blockedLogin.body.error.code).toBe('ACCOUNT_SUSPENDED');
+
+    const restored = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
+      status: 'resolved',
+      action: 'restore_account',
+      note: 'Account restored after administrative review.',
+    });
+    expect(restored.status).toBe(200);
+    expect(restored.body.data.accountModeration.suspendedUntil).toBeNull();
+    expect((await second.agent.post('/api/v1/auth/login').send({ email: second.email, password: 'StrongPass123' })).status).toBe(200);
   }, 30_000);
 });

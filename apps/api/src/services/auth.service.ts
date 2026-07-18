@@ -8,6 +8,7 @@ import { AppError } from '../utils/errors.js';
 import { mapUser } from '../utils/mappers.js';
 import { createOpaqueToken, hashToken, signAccessToken } from './token.service.js';
 import { localVerificationPath, passwordResetUrl, sendPasswordResetEmail, sendVerificationEmail } from './mail.service.js';
+import { accountModerationService } from './account-moderation.service.js';
 
 interface Credentials { email: string; password: string; totpCode?: string }
 interface RegisterInput extends Credentials { username: string }
@@ -125,6 +126,7 @@ export const authService = {
         if (!input.totpCode) throw new AppError(401, 'Enter the six-digit authenticator code', 'TWO_FACTOR_REQUIRED');
         if (!(await verify({ secret: user.totp_secret!, token: input.totpCode })).valid) throw new AppError(401, 'Authenticator code is invalid', 'INVALID_TWO_FACTOR_CODE');
       }
+      await accountModerationService.assertCanAuthenticate(user.id);
       const session = await createSession(user, meta);
       return { user: mapUser(user as unknown as Record<string, unknown>, true), ...session };
     }
@@ -137,6 +139,7 @@ export const authService = {
       if (!input.totpCode) throw new AppError(401, 'Enter the six-digit authenticator code', 'TWO_FACTOR_REQUIRED');
       if (!(await verify({ secret: data.totp_secret, token: input.totpCode })).valid) throw new AppError(401, 'Authenticator code is invalid', 'INVALID_TWO_FACTOR_CODE');
     }
+    await accountModerationService.assertCanAuthenticate(data.id);
     const session = await createSession({ id: data.id, email: data.email, username: data.username }, meta);
     return { user: mapUser(data, true), ...session };
   },
@@ -151,6 +154,7 @@ export const authService = {
       const user = await localDb.read((state) => state.users.find((item) => item.id === token.user_id));
       if (!user) throw new AppError(401, 'Refresh token is invalid or expired', 'INVALID_REFRESH_TOKEN');
       if (env.REQUIRE_EMAIL_VERIFICATION && !user.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
+      await accountModerationService.assertCanAuthenticate(user.id);
       const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 86_400_000);
       await localDb.mutate((state) => {
         const stored = state.refreshTokens.find((item) => item.id === token.id);
@@ -167,6 +171,7 @@ export const authService = {
     if (!data?.users) throw new AppError(401, 'Refresh token is invalid or expired', 'INVALID_REFRESH_TOKEN');
     const storedUser = data.users as unknown as { id: string; email: string; username: string; email_verified: boolean };
     if (env.REQUIRE_EMAIL_VERIFICATION && !storedUser.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
+    await accountModerationService.assertCanAuthenticate(storedUser.id);
     const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 86_400_000);
     const { error } = await db.from('refresh_tokens').update({ expires_at: expiresAt.toISOString(), revoked_at: null, last_used_at: now }).eq('id', data.id);
     if (error) throw new AppError(503, 'Could not renew session', 'SESSION_RENEW_FAILED');
