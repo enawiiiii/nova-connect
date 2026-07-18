@@ -62,6 +62,17 @@ export interface LocalToken {
   created_at: string;
 }
 
+export interface LocalPushSubscription {
+  id: string;
+  user_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  user_agent: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface LocalState {
   users: LocalUser[];
   friends: LocalFriend[];
@@ -70,10 +81,11 @@ export interface LocalState {
   notifications: LocalNotification[];
   refreshTokens: LocalToken[];
   verificationTokens: LocalToken[];
+  pushSubscriptions: LocalPushSubscription[];
 }
 
 const emptyState = (): LocalState => ({
-  users: [], friends: [], messages: [], calls: [], notifications: [], refreshTokens: [], verificationTokens: [],
+  users: [], friends: [], messages: [], calls: [], notifications: [], refreshTokens: [], verificationTokens: [], pushSubscriptions: [],
 });
 
 const dataPath = path.resolve(env.LOCAL_DATA_PATH);
@@ -85,6 +97,7 @@ async function load() {
   if (state) return state;
   try {
     state = JSON.parse(await readFile(dataPath, 'utf8')) as LocalState;
+    state.pushSubscriptions ??= [];
   } catch (error) {
     const code = error instanceof Error && 'code' in error ? String(error.code) : '';
     if (code !== 'ENOENT') throw error;

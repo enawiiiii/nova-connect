@@ -6,6 +6,7 @@ import { callService } from '../services/call.service.js';
 import { friendService } from '../services/friend.service.js';
 import { messageService } from '../services/message.service.js';
 import { notificationService } from '../services/notification.service.js';
+import { pushService } from '../services/push.service.js';
 import { verifyAccessToken, type TokenUser } from '../services/token.service.js';
 import { userService } from '../services/user.service.js';
 
@@ -111,6 +112,13 @@ export function createSocketServer(httpServer: HttpServer) {
           const notification = await notificationService.create(parsed.receiverId, 'message', `${user.username} sent you a message`);
           io.to(`user:${parsed.receiverId}`).emit('notification:new', notification);
         } catch (error) { console.error('Could not create message notification', error); }
+        void pushService.send(parsed.receiverId, {
+          title: user.username,
+          body: parsed.text.length > 100 ? `${parsed.text.slice(0, 100)}…` : parsed.text,
+          url: `/app/chats/${user.id}`,
+          tag: `message-${user.id}`,
+          kind: 'message',
+        });
       } catch (error) { ack?.({ error: error instanceof Error ? error.message : 'Could not send message' }); }
     });
 
@@ -143,6 +151,13 @@ export function createSocketServer(httpServer: HttpServer) {
         if (access.mode === 'individual' && access.participantUserIds.includes(parsed.data.receiverId)) {
           const caller = await userService.getPublicById(user.id);
           io.to(`user:${parsed.data.receiverId}`).emit('call:incoming', { caller, roomId: parsed.data.roomId, type: parsed.data.type, group: false });
+          void pushService.send(parsed.data.receiverId, {
+            title: `مكالمة ${parsed.data.type === 'video' ? 'فيديو' : 'صوتية'} من ${user.username}`,
+            body: 'اضغط لفتح المكالمة في NOVA',
+            url: `/app/call/${parsed.data.type}/${parsed.data.roomId}?mode=individual`,
+            tag: `call-${parsed.data.roomId}`,
+            kind: 'call',
+          });
         }
       } catch { /* Do not reveal call authorization details over sockets. */ }
     });
@@ -156,6 +171,15 @@ export function createSocketServer(httpServer: HttpServer) {
         const caller = await userService.getPublicById(user.id);
         const receiverIds = [...new Set(parsed.data.receiverIds)].filter((id) => id !== user.id && access.participantUserIds.includes(id));
         receiverIds.forEach((id) => io.to(`user:${id}`).emit('call:incoming', { caller, roomId: parsed.data.roomId, type: parsed.data.type, group: true }));
+        receiverIds.forEach((id) => {
+          void pushService.send(id, {
+            title: `مكالمة جماعية من ${user.username}`,
+            body: `دعوة إلى مكالمة ${parsed.data.type === 'video' ? 'فيديو' : 'صوتية'} جماعية`,
+            url: `/app/call/${parsed.data.type}/${parsed.data.roomId}?mode=group`,
+            tag: `call-${parsed.data.roomId}`,
+            kind: 'call',
+          });
+        });
       } catch { /* Do not reveal call authorization details over sockets. */ }
     });
 

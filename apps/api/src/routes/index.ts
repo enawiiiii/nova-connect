@@ -5,6 +5,7 @@ import friendRoutes from './friend.routes.js';
 import messageRoutes from './message.routes.js';
 import callRoutes from './call.routes.js';
 import notificationRoutes from './notification.routes.js';
+import pushRoutes from './push.routes.js';
 
 export const apiRouter = Router();
 apiRouter.use('/auth', authRoutes);
@@ -13,3 +14,4 @@ apiRouter.use('/friends', friendRoutes);
 apiRouter.use('/messages', messageRoutes);
 apiRouter.use('/calls', callRoutes);
 apiRouter.use('/notifications', notificationRoutes);
+apiRouter.use('/push', pushRoutes);

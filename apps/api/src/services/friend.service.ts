@@ -5,6 +5,7 @@ import { localDb, type LocalFriend } from '../database/local.database.js';
 import { AppError } from '../utils/errors.js';
 import { mapUser } from '../utils/mappers.js';
 import { notificationService } from './notification.service.js';
+import { pushService } from './push.service.js';
 
 const friendSelect = 'id,status,requester_id,receiver_id,created_at,requester:users!friends_requester_id_fkey(id,username,avatar,bio,status,last_seen),receiver:users!friends_receiver_id_fkey(id,username,avatar,bio,status,last_seen)';
 
@@ -46,6 +47,13 @@ export const friendService = {
         return created;
       });
       await notificationService.create(receiverId, 'friend_request', `${requesterName} sent you a friend request`);
+      void pushService.send(receiverId, {
+        title: 'طلب صداقة جديد',
+        body: `${requesterName} أرسل إليك طلب صداقة`,
+        url: '/app/friends',
+        tag: `friend-${friend.id}`,
+        kind: 'friend',
+      });
       return friend;
     }
     const { data: existing } = await db.from('friends').select('id,status').or(`and(requester_id.eq.${requesterId},receiver_id.eq.${receiverId}),and(requester_id.eq.${receiverId},receiver_id.eq.${requesterId})`).in('status', ['pending', 'accepted']).maybeSingle();
@@ -53,6 +61,13 @@ export const friendService = {
     const { data, error } = await db.from('friends').insert({ requester_id: requesterId, receiver_id: receiverId }).select('*').single();
     if (error || !data) throw new AppError(500, 'Could not send friend request');
     await notificationService.create(receiverId, 'friend_request', `${requesterName} sent you a friend request`);
+    void pushService.send(receiverId, {
+      title: 'طلب صداقة جديد',
+      body: `${requesterName} أرسل إليك طلب صداقة`,
+      url: '/app/friends',
+      tag: `friend-${data.id}`,
+      kind: 'friend',
+    });
     return data;
   },
 
@@ -64,7 +79,16 @@ export const friendService = {
         request.status = action === 'accept' ? 'accepted' : 'rejected';
         return request.requester_id;
       });
-      if (action === 'accept') await notificationService.create(requesterId, 'friend_accepted', `${username} accepted your friend request`);
+      if (action === 'accept') {
+        await notificationService.create(requesterId, 'friend_accepted', `${username} accepted your friend request`);
+        void pushService.send(requesterId, {
+          title: 'تم قبول طلب الصداقة',
+          body: `${username} أصبح ضمن أصدقائك`,
+          url: '/app/friends',
+          tag: `friend-accepted-${requestId}`,
+          kind: 'friend',
+        });
+      }
       return;
     }
     const { data: request } = await db.from('friends').select('*').eq('id', requestId).eq('receiver_id', userId).eq('status', 'pending').maybeSingle();
@@ -72,7 +96,16 @@ export const friendService = {
     const status = action === 'accept' ? 'accepted' : 'rejected';
     const { error } = await db.from('friends').update({ status }).eq('id', requestId);
     if (error) throw new AppError(500, 'Could not update friend request');
-    if (status === 'accepted') await notificationService.create(request.requester_id, 'friend_accepted', `${username} accepted your friend request`);
+    if (status === 'accepted') {
+      await notificationService.create(request.requester_id, 'friend_accepted', `${username} accepted your friend request`);
+      void pushService.send(request.requester_id, {
+        title: 'تم قبول طلب الصداقة',
+        body: `${username} أصبح ضمن أصدقائك`,
+        url: '/app/friends',
+        tag: `friend-accepted-${requestId}`,
+        kind: 'friend',
+      });
+    }
   },
 
   async remove(userId: string, friendshipId: string) {

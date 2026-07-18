@@ -26,6 +26,7 @@ export default defineConfig({
       },
       workbox: {
         navigateFallback: '/index.html',
+        importScripts: ['/push-sw.js'],
         runtimeCaching: [{
           urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
           handler: 'NetworkOnly',

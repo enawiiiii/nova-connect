@@ -7,10 +7,12 @@ import { useNovaStore } from '../stores/nova.store';
 import { Avatar } from './Avatar';
 import { Brand } from './Brand';
 import { IncomingCallOverlay } from '../features/calls/IncomingCallOverlay';
+import { ensurePushSubscription } from '../lib/push';
 
 export function AppShell() {
   const { t } = useTranslation();
   const user = useAuthStore((state) => state.user)!;
+  const accessToken = useAuthStore((state) => state.accessToken);
   const { load, notifications, markNotificationsRead } = useNovaStore();
   const [open, setOpen] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -23,6 +25,9 @@ export function AppShell() {
     });
     return () => { active = false; };
   }, [load, retryKey]);
+  useEffect(() => {
+    if (accessToken) void ensurePushSubscription(accessToken);
+  }, [accessToken]);
   const nav = [
     { to: '/app/chats', icon: MessageCircle, label: t('nav.chats') },
     { to: '/app/friends', icon: UsersRound, label: t('nav.friends') },
