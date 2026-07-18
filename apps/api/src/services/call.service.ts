@@ -80,10 +80,16 @@ export const callService = {
     const servers: Array<{ urls: string[] | string; username?: string; credential?: string }> = [
       { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
     ];
-    if (!env.TURN_URL || !env.TURN_SECRET) return servers;
-    const username = `${Math.floor(Date.now() / 1000) + 3600}:${userId}`;
-    const credential = crypto.createHmac('sha1', env.TURN_SECRET).update(username).digest('base64');
-    servers.push({ urls: env.TURN_URL, username, credential });
+    if (!env.TURN_URL) return servers;
+    const urls = env.TURN_URL.split(',').map((value) => value.trim()).filter((value) => /^turns?:/i.test(value));
+    if (!urls.length) return servers;
+    if (env.TURN_SECRET) {
+      const username = `${Math.floor(Date.now() / 1000) + 3600}:${userId}`;
+      const credential = crypto.createHmac('sha1', env.TURN_SECRET).update(username).digest('base64');
+      servers.push({ urls, username, credential });
+    } else if (env.TURN_USERNAME && env.TURN_CREDENTIAL) {
+      servers.push({ urls, username: env.TURN_USERNAME, credential: env.TURN_CREDENTIAL });
+    }
     return servers;
   },
   async roomAccess(userId: string, roomId: string) {

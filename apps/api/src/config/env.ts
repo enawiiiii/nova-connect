@@ -23,6 +23,8 @@ const schema = z.object({
   LOCAL_DATA_PATH: z.string().default('.local/nova.json'),
   TURN_URL: z.string().optional(),
   TURN_SECRET: z.string().optional(),
+  TURN_USERNAME: z.string().optional(),
+  TURN_CREDENTIAL: z.string().optional(),
   VAPID_PUBLIC_KEY: z.string().optional(),
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().default('mailto:connextnova@gmail.com'),
@@ -56,5 +58,8 @@ if (env.NODE_ENV === 'production') {
   const hasSmtp = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
   if (env.REQUIRE_EMAIL_VERIFICATION && !env.BREVO_API_KEY && !hasSmtp) {
     throw new Error('BREVO_API_KEY or SMTP credentials are required in production for email verification');
+  }
+  if (env.TURN_URL && !env.TURN_SECRET && !(env.TURN_USERNAME && env.TURN_CREDENTIAL)) {
+    throw new Error('TURN_URL requires TURN_SECRET or TURN_USERNAME and TURN_CREDENTIAL');
   }
 }

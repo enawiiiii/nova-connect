@@ -142,7 +142,8 @@ Never expose `SUPABASE_SERVICE_ROLE_KEY` as a `VITE_` variable or commit it. RLS
 | `REQUIRE_EMAIL_VERIFICATION` | No | Set to `false` only for temporary testing; defaults to `true` |
 | `BREVO_API_KEY` | Recommended on Render Free | Sends verification mail over HTTPS because free Render services block SMTP ports |
 | `SMTP_*` | Alternative | SMTP fallback for hosting plans that allow outbound SMTP |
-| `TURN_URL` / `TURN_SECRET` | Recommended for production | Coturn REST secret used to issue time-limited relay credentials |
+| `TURN_URL` / `TURN_SECRET` | Recommended for production | Comma-separated Coturn URLs and REST secret used to issue time-limited relay credentials |
+| `TURN_USERNAME` / `TURN_CREDENTIAL` | Alternative to `TURN_SECRET` | Static credentials supplied by a hosted TURN provider |
 | `VITE_API_URL` | Separate-origin only | Override the default same-origin API base |
 | `VITE_SOCKET_URL` | Separate-origin only | Override the default same-origin Socket.IO origin |
 

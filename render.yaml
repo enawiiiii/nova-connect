@@ -52,6 +52,10 @@ services:
         sync: false
       - key: TURN_SECRET
         sync: false
+      - key: TURN_USERNAME
+        sync: false
+      - key: TURN_CREDENTIAL
+        sync: false
       - key: VAPID_PUBLIC_KEY
         value: BKfdmxVj3L9dWBJlEOl3uc4bt5JjmNLN1byeqZC8CdsL5PvOD6AosO-gBMyX3AM11K5sIySwbAh7EIa55Z1qsf4
       - key: VAPID_PRIVATE_KEY
