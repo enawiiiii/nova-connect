@@ -113,8 +113,21 @@ Open the Supabase SQL editor and run these migrations in order:
 1. [`supabase/migrations/0001_initial_schema.sql`](supabase/migrations/0001_initial_schema.sql)
 2. [`supabase/migrations/0002_avatar_storage.sql`](supabase/migrations/0002_avatar_storage.sql)
 3. [`supabase/migrations/0003_call_room_hardening.sql`](supabase/migrations/0003_call_room_hardening.sql)
+4. [`supabase/migrations/0004_push_subscriptions.sql`](supabase/migrations/0004_push_subscriptions.sql)
+5. [`supabase/migrations/0005_rich_messages.sql`](supabase/migrations/0005_rich_messages.sql)
+6. [`supabase/migrations/0006_groups.sql`](supabase/migrations/0006_groups.sql)
+7. [`supabase/migrations/0007_security_privacy.sql`](supabase/migrations/0007_security_privacy.sql)
+8. [`supabase/migrations/0008_account_controls.sql`](supabase/migrations/0008_account_controls.sql)
+9. [`supabase/migrations/0009_admin_monitoring.sql`](supabase/migrations/0009_admin_monitoring.sql)
+10. [`supabase/migrations/0010_password_recovery.sql`](supabase/migrations/0010_password_recovery.sql)
 
-They create the relational schema, indexes, RLS boundary, and public profile-photo bucket. Uploads to that bucket are still restricted to the API service-role client.
+They create the relational schema, indexes, RLS boundary, private message-media storage, profile-photo storage, groups, security controls, monitoring, and password recovery.
+
+Grant the owner account administrator access only after it has registered:
+
+```sql
+update public.users set is_admin = true where email = 'your-owner-email@example.com';
+```
 
 Copy these values from **Project Settings → API** into the API environment:
 
@@ -144,6 +157,8 @@ Never expose `SUPABASE_SERVICE_ROLE_KEY` as a `VITE_` variable or commit it. RLS
 | `SMTP_*` | Alternative | SMTP fallback for hosting plans that allow outbound SMTP |
 | `TURN_URL` / `TURN_SECRET` | Recommended for production | Comma-separated Coturn URLs and REST secret used to issue time-limited relay credentials |
 | `TURN_USERNAME` / `TURN_CREDENTIAL` | Alternative to `TURN_SECRET` | Static credentials supplied by a hosted TURN provider |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | Recommended | Web Push key pair; the private key stays server-side |
+| `VAPID_SUBJECT` | No | Contact URI for Web Push, normally `mailto:owner@example.com` |
 | `VITE_API_URL` | Separate-origin only | Override the default same-origin API base |
 | `VITE_SOCKET_URL` | Separate-origin only | Override the default same-origin Socket.IO origin |
 
@@ -173,7 +188,7 @@ npm run lint
 ## Deploying to Render
 
 1. Push the repository to a Git provider supported by Render.
-2. Apply both Supabase migrations before accepting registrations.
+2. Apply every Supabase migration in numeric order before deploying the matching application release.
 3. In Render, choose **New → Blueprint** and select the repository. `render.yaml` creates one Node service named `nova-connect`.
 4. Enter the requested Supabase, Brevo (or SMTP), and optional TURN secrets.
 5. Set both `CLIENT_URL` and `APP_URL` to the service's exact public URL, such as `https://nova-connect.onrender.com`, then deploy.
@@ -187,7 +202,7 @@ The API serves the built PWA in production, so REST, cookies, Socket.IO, and Web
 - Configure Brevo on Render Free (or SMTP on a paid host) and test verification links against the production web origin.
 - Add Coturn with a server-side REST secret and test calls between Wi-Fi and mobile data.
 - Use a paid Render instance or equivalent for reliable always-on Socket.IO connections.
-- Add log aggregation, uptime monitoring, database backups, and Sentry-compatible error reporting.
+- Configure external uptime monitoring and automated Supabase backups; the built-in admin page already records client and API errors.
 - Keep Helmet's Content Security Policy aligned with any future analytics/error-reporting domains.
 - Plan an E2E encryption protocol and key-verification UX before marketing messages as end-to-end encrypted. The current transport is HTTPS/WSS plus WebRTC DTLS-SRTP, and the code is structured to add message encryption later.
 
