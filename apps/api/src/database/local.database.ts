@@ -14,6 +14,9 @@ export interface LocalUser {
   email_verified: boolean;
   totp_secret?: string | null;
   totp_enabled?: boolean;
+  show_last_seen?: boolean;
+  show_avatar?: boolean;
+  allow_friend_requests?: boolean;
   created_at: string;
 }
 

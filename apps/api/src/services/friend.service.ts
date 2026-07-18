@@ -8,7 +8,7 @@ import { notificationService } from './notification.service.js';
 import { pushService } from './push.service.js';
 import { privacyService } from './privacy.service.js';
 
-const friendSelect = 'id,status,requester_id,receiver_id,created_at,requester:users!friends_requester_id_fkey(id,username,avatar,bio,status,last_seen),receiver:users!friends_receiver_id_fkey(id,username,avatar,bio,status,last_seen)';
+const friendSelect = 'id,status,requester_id,receiver_id,created_at,requester:users!friends_requester_id_fkey(id,username,avatar,bio,status,last_seen,show_avatar,show_last_seen),receiver:users!friends_receiver_id_fkey(id,username,avatar,bio,status,last_seen,show_avatar,show_last_seen)';
 
 export const friendService = {
   async list(userId: string) {
@@ -39,8 +39,9 @@ export const friendService = {
     if (requesterId === receiverId) throw new AppError(400, 'You cannot add yourself', 'SELF_FRIEND');
     if (await privacyService.isBlocked(requesterId, receiverId)) throw new AppError(403, 'Friend request is not allowed', 'USER_BLOCKED');
     if (isLocalDevelopment) {
-      const receiverExists = await localDb.read((state) => state.users.some((user) => user.id === receiverId));
-      if (!receiverExists) throw new AppError(404, 'User not found', 'USER_NOT_FOUND');
+      const receiver = await localDb.read((state) => state.users.find((user) => user.id === receiverId));
+      if (!receiver) throw new AppError(404, 'User not found', 'USER_NOT_FOUND');
+      if (receiver.allow_friend_requests === false) throw new AppError(403, 'This user is not accepting friend requests', 'FRIEND_REQUESTS_DISABLED');
       const friend = await localDb.mutate((state) => {
         const existing = state.friends.find((row) => ((row.requester_id === requesterId && row.receiver_id === receiverId) || (row.requester_id === receiverId && row.receiver_id === requesterId)) && ['pending', 'accepted'].includes(row.status));
         if (existing) throw new AppError(409, existing.status === 'accepted' ? 'You are already friends' : 'A request is already pending', 'FRIEND_REQUEST_EXISTS');
@@ -58,6 +59,9 @@ export const friendService = {
       });
       return friend;
     }
+    const { data: receiver } = await db.from('users').select('allow_friend_requests').eq('id', receiverId).maybeSingle();
+    if (!receiver) throw new AppError(404, 'User not found', 'USER_NOT_FOUND');
+    if (!receiver.allow_friend_requests) throw new AppError(403, 'This user is not accepting friend requests', 'FRIEND_REQUESTS_DISABLED');
     const { data: existing } = await db.from('friends').select('id,status').or(`and(requester_id.eq.${requesterId},receiver_id.eq.${receiverId}),and(requester_id.eq.${receiverId},receiver_id.eq.${requesterId})`).in('status', ['pending', 'accepted']).maybeSingle();
     if (existing) throw new AppError(409, existing.status === 'accepted' ? 'You are already friends' : 'A request is already pending', 'FRIEND_REQUEST_EXISTS');
     const { data, error } = await db.from('friends').insert({ requester_id: requesterId, receiver_id: receiverId }).select('*').single();

@@ -6,10 +6,10 @@ export const mapUser = (row: Row, includeEmail = false): PublicUser => ({
   id: String(row.id),
   username: String(row.username),
   ...(includeEmail && row.email ? { email: String(row.email) } : {}),
-  avatar: row.avatar ? String(row.avatar) : null,
+  avatar: !includeEmail && row.show_avatar === false ? null : row.avatar ? String(row.avatar) : null,
   bio: row.bio ? String(row.bio) : null,
   status: (row.status ?? 'offline') as PublicUser['status'],
-  lastSeen: row.last_seen ? String(row.last_seen) : null,
+  lastSeen: !includeEmail && row.show_last_seen === false ? null : row.last_seen ? String(row.last_seen) : null,
 });
 
 export const mapMessage = (row: Row): Message => ({
