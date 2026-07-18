@@ -9,7 +9,7 @@ import { privacyService } from './privacy.service.js';
 
 export type ReportStatus = 'open' | 'reviewing' | 'resolved' | 'dismissed';
 export type ReportReason = 'spam' | 'harassment' | 'impersonation' | 'unsafe' | 'other';
-export type ModerationAction = 'none' | 'warn' | 'protect_reporter' | 'revoke_sessions' | 'suspend_24h' | 'suspend_7d' | 'restore_account';
+export type ModerationAction = 'none' | 'warn' | 'protect_reporter' | 'restore_contact' | 'revoke_sessions' | 'suspend_24h' | 'suspend_7d' | 'restore_account';
 
 interface ReportFilters {
   status?: ReportStatus;
@@ -110,9 +110,24 @@ async function historyFor(reportId: string) {
     note: typeof event.details?.note === 'string' ? event.details.note : null,
     previousStatus: typeof event.details?.previousStatus === 'string' ? event.details.previousStatus : null,
     nextStatus: typeof event.details?.nextStatus === 'string' ? event.details.nextStatus : null,
+    statusChanged: event.details?.statusChanged === true || (
+      typeof event.details?.previousStatus === 'string'
+      && typeof event.details?.nextStatus === 'string'
+      && event.details.previousStatus !== event.details.nextStatus
+    ),
     admin: event.user_id ? { id: event.user_id, username: names.get(event.user_id) ?? 'مدير' } : null,
     createdAt: event.created_at,
   }));
+}
+
+function hasActiveReportProtection(
+  history: Awaited<ReturnType<typeof historyFor>>,
+  directBlock: boolean,
+) {
+  const latestProtectionAction = history.find((event) => (
+    event.action === 'protect_reporter' || event.action === 'restore_contact'
+  ));
+  return directBlock && latestProtectionAction?.action === 'protect_reporter';
 }
 
 export const reportModerationService = {
@@ -154,10 +169,17 @@ export const reportModerationService = {
     const { reports, users } = await loadRows();
     const usersById = new Map(users.map((user) => [user.id, user]));
     const repeatCount = reports.filter((item) => item.reported_id === report.reported_id).length;
+    const [history, accountModeration, directBlock] = await Promise.all([
+      historyFor(id),
+      accountModerationService.state(report.reported_id),
+      privacyService.hasDirectBlock(report.reporter_id, report.reported_id),
+    ]);
     return {
       ...decorate(report, usersById, repeatCount),
-      history: await historyFor(id),
-      accountModeration: await accountModerationService.state(report.reported_id),
+      history,
+      accountModeration,
+      contactBlocked: directBlock,
+      reporterProtected: hasActiveReportProtection(history, directBlock),
     };
   },
 
@@ -166,15 +188,72 @@ export const reportModerationService = {
     const nextStatus = input.status ?? before.status as ReportStatus;
     const action = input.action ?? 'none';
     const note = input.note?.trim() || null;
-    if (isLocalDevelopment) {
+    const statusChanged = nextStatus !== before.status;
+    const allowedTransitions: Record<ReportStatus, ReportStatus[]> = {
+      open: ['reviewing'],
+      reviewing: ['resolved', 'dismissed'],
+      resolved: [],
+      dismissed: [],
+    };
+    if (statusChanged && !allowedTransitions[before.status as ReportStatus].includes(nextStatus)) {
+      throw new AppError(409, 'This report status is final or the requested transition is not allowed', 'REPORT_STATUS_LOCKED');
+    }
+    if (!statusChanged && action === 'none' && !note) {
+      throw new AppError(409, 'No new report change was provided', 'NO_REPORT_CHANGE');
+    }
+    if (before.status === 'open' && action !== 'none') {
+      throw new AppError(409, 'Start reviewing the report before applying an account action', 'REPORT_REVIEW_REQUIRED');
+    }
+    if (['resolved', 'dismissed'].includes(before.status) && !['none', 'restore_account', 'restore_contact'].includes(action)) {
+      throw new AppError(409, 'Closed reports cannot receive new punitive actions', 'REPORT_CLOSED');
+    }
+
+    const [history, accountState, directBlock] = await Promise.all([
+      historyFor(id),
+      accountModerationService.state(before.reported_id),
+      privacyService.hasDirectBlock(before.reporter_id, before.reported_id),
+    ]);
+    const reporterProtected = hasActiveReportProtection(history, directBlock);
+    const appliedActions = new Set(history.map((event) => event.action));
+    if (!['none', 'restore_account', 'restore_contact'].includes(action) && appliedActions.has(action)) {
+      throw new AppError(409, 'This moderation action was already applied to the report', 'ACTION_ALREADY_APPLIED');
+    }
+    if (['suspend_24h', 'suspend_7d'].includes(action) && accountState.suspendedUntil) {
+      throw new AppError(409, 'The account is already suspended', 'ACCOUNT_ALREADY_SUSPENDED');
+    }
+    if (action === 'restore_account' && !accountState.suspendedUntil) {
+      throw new AppError(409, 'The account is not currently suspended', 'ACCOUNT_NOT_SUSPENDED');
+    }
+    if (action === 'protect_reporter' && directBlock) {
+      throw new AppError(
+        409,
+        reporterProtected ? 'The reporter is already protected from this account' : 'The reporter already blocks this account directly',
+        reporterProtected ? 'REPORTER_ALREADY_PROTECTED' : 'CONTACT_ALREADY_BLOCKED',
+      );
+    }
+    if (action === 'restore_contact' && !reporterProtected) {
+      throw new AppError(409, 'There is no report protection block to remove', 'REPORTER_NOT_PROTECTED');
+    }
+
+    if (statusChanged && isLocalDevelopment) {
       await localDb.mutate((state) => {
         const report = state.reports.find((item) => item.id === id);
         if (!report) throw new AppError(404, 'Report not found', 'REPORT_NOT_FOUND');
+        if (report.status !== before.status) {
+          throw new AppError(409, 'The report was updated by another administrator', 'REPORT_CHANGED');
+        }
         report.status = nextStatus;
       });
-    } else {
-      const { error } = await db.from('user_reports').update({ status: nextStatus }).eq('id', id);
+    } else if (statusChanged) {
+      const { data, error } = await db
+        .from('user_reports')
+        .update({ status: nextStatus })
+        .eq('id', id)
+        .eq('status', before.status)
+        .select('id')
+        .maybeSingle();
       if (error) throw new AppError(500, 'Could not update report', 'REPORT_UPDATE_FAILED');
+      if (!data) throw new AppError(409, 'The report was updated by another administrator', 'REPORT_CHANGED');
     }
 
     let suspendedUntil: string | null = null;
@@ -182,6 +261,8 @@ export const reportModerationService = {
       await notificationService.create(before.reported_id, 'system', 'تنبيه من إدارة NOVA: وصلنا بلاغ متعلق بحسابك. يرجى الالتزام بقواعد السلامة واحترام المستخدمين.');
     } else if (action === 'protect_reporter') {
       await privacyService.block(before.reporter_id, before.reported_id);
+    } else if (action === 'restore_contact') {
+      await privacyService.unblock(before.reporter_id, before.reported_id);
     } else if (action === 'revoke_sessions') {
       await accountModerationService.revokeSessions(before.reported_id);
     } else if (action === 'suspend_24h' || action === 'suspend_7d') {
@@ -197,7 +278,7 @@ export const reportModerationService = {
       userId: adminId,
       level: 'info',
       source: 'report-moderation',
-      message: action === 'none' ? 'تم تحديث حالة البلاغ' : 'تم تنفيذ إجراء إداري على البلاغ',
+      message: statusChanged ? 'تم تحديث حالة البلاغ' : action === 'none' ? 'تمت إضافة ملاحظة إدارية' : 'تم تنفيذ إجراء إداري على البلاغ',
       details: {
         reportId: id,
         targetUserId: before.reported_id,
@@ -205,6 +286,7 @@ export const reportModerationService = {
         note,
         previousStatus: before.status,
         nextStatus,
+        statusChanged,
         suspendedUntil,
       },
     });

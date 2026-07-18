@@ -9,7 +9,7 @@ import { asyncHandler } from '../utils/async-handler.js';
 const router = Router();
 const reportIdParams = z.object({ id: z.string().uuid() });
 const reportStatus = z.enum(['open', 'reviewing', 'resolved', 'dismissed']);
-const moderationAction = z.enum(['none', 'warn', 'protect_reporter', 'revoke_sessions', 'suspend_24h', 'suspend_7d', 'restore_account']);
+const moderationAction = z.enum(['none', 'warn', 'protect_reporter', 'restore_contact', 'revoke_sessions', 'suspend_24h', 'suspend_7d', 'restore_account']);
 router.use(authenticate, asyncHandler(requireAdmin));
 router.get('/overview', asyncHandler(adminController.overview));
 router.get('/reports', validate(z.object({

@@ -1,17 +1,17 @@
 import {
   AlertOctagon, Ban, CheckCircle2, ChevronLeft, ChevronRight, CircleDot, Clock3,
   FileWarning, Filter, Flag, History, LockKeyhole, MessageSquareWarning, RefreshCw,
-  Search, ShieldAlert, ShieldCheck, UserRound, X,
+  Search, ShieldAlert, ShieldCheck, ShieldOff, Unlock, UserRound, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
-import { api } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import { useAuthStore } from '../stores/auth.store';
 
 type ReportStatus = 'open' | 'reviewing' | 'resolved' | 'dismissed';
 type ReportReason = 'spam' | 'harassment' | 'impersonation' | 'unsafe' | 'other';
 type ReportPriority = 'normal' | 'high' | 'urgent';
-type ModerationAction = 'none' | 'warn' | 'protect_reporter' | 'revoke_sessions' | 'suspend_24h' | 'suspend_7d' | 'restore_account';
+type ModerationAction = 'none' | 'warn' | 'protect_reporter' | 'restore_contact' | 'revoke_sessions' | 'suspend_24h' | 'suspend_7d' | 'restore_account';
 
 interface ReportUser {
   id: string;
@@ -42,6 +42,7 @@ interface ReportHistory {
   note: string | null;
   previousStatus: string | null;
   nextStatus: string | null;
+  statusChanged: boolean;
   admin: { id: string; username: string } | null;
   createdAt: string;
 }
@@ -49,6 +50,8 @@ interface ReportHistory {
 interface ReportDetail extends ReportItem {
   history: ReportHistory[];
   accountModeration: { suspendedUntil: string | null };
+  contactBlocked: boolean;
+  reporterProtected: boolean;
 }
 
 interface ReportList {
@@ -76,10 +79,25 @@ const actionCopy: Record<ModerationAction, { label: string; hint: string }> = {
   none: { label: 'بدون إجراء على الحساب', hint: 'تحديث حالة البلاغ وتسجيل الملاحظة فقط.' },
   warn: { label: 'إرسال تحذير رسمي', hint: 'يصل تنبيه إداري للمستخدم المُبلّغ عنه.' },
   protect_reporter: { label: 'حماية المُبلِّغ', hint: 'تُحذف الصداقة وتتوقف الرسائل والمكالمات بين الطرفين.' },
+  restore_contact: { label: 'رفع حظر التواصل', hint: 'يُرفع حظر الحماية الذي فُرض بين الطرفين بسبب هذا البلاغ.' },
   revoke_sessions: { label: 'تسجيل خروج من كل الأجهزة', hint: 'تُلغى جلسات المستخدم الحالية ويُطلب منه تسجيل الدخول مجددًا.' },
   suspend_24h: { label: 'تعليق الحساب 24 ساعة', hint: 'يُمنع تسجيل الدخول وتُلغى الجلسات لمدة يوم.' },
   suspend_7d: { label: 'تعليق الحساب 7 أيام', hint: 'يُمنع تسجيل الدخول وتُلغى الجلسات لمدة أسبوع.' },
   restore_account: { label: 'إعادة تفعيل الحساب', hint: 'يُلغى التعليق الإداري السابق فورًا.' },
+};
+
+const moderationErrorCopy: Record<string, string> = {
+  REPORT_STATUS_LOCKED: 'حالة البلاغ نهائية ولا يمكن إعادتها إلى حالة سابقة.',
+  REPORT_CHANGED: 'عدّل مدير آخر هذا البلاغ. حدّث الصفحة ثم راجع الحالة الجديدة.',
+  NO_REPORT_CHANGE: 'لم تُجرِ أي تغيير جديد لحفظه.',
+  REPORT_REVIEW_REQUIRED: 'ابدأ مراجعة البلاغ أولًا قبل تنفيذ إجراء على الحساب.',
+  REPORT_CLOSED: 'البلاغ مغلق؛ المتاح فقط هو رفع تعليق أو حظر سابق.',
+  ACTION_ALREADY_APPLIED: 'تم تنفيذ هذا الإجراء مسبقًا ولا يمكن تكراره على البلاغ نفسه.',
+  ACCOUNT_ALREADY_SUSPENDED: 'الحساب معلّق بالفعل. استخدم زر رفع التعليق إذا أردت إلغاءه.',
+  ACCOUNT_NOT_SUSPENDED: 'الحساب غير معلّق حاليًا.',
+  REPORTER_ALREADY_PROTECTED: 'حماية المُبلّغ مفعّلة بالفعل.',
+  CONTACT_ALREADY_BLOCKED: 'المُبلّغ حظر هذا الحساب بنفسه، لذلك لن تغيّر الإدارة اختياره أو ترفعه.',
+  REPORTER_NOT_PROTECTED: 'لا يوجد حظر حماية إداري لرفعه.',
 };
 
 const relativeTime = (value: string) => {
@@ -198,7 +216,7 @@ export function AdminPage() {
       setNotice('تم حفظ القرار وتنفيذ الإجراء وتوثيقه في سجل البلاغ.');
       await loadReports(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'تعذر حفظ القرار.');
+      setError(cause instanceof ApiError && cause.code ? moderationErrorCopy[cause.code] ?? cause.message : cause instanceof Error ? cause.message : 'تعذر حفظ القرار.');
     } finally {
       setSaving(false);
     }
@@ -210,6 +228,20 @@ export function AdminPage() {
     { key: 'urgent', label: 'أولوية عاجلة', value: data.summary.urgent, icon: AlertOctagon },
     { key: 'closed', label: 'مغلقة', value: data.summary.resolved + data.summary.dismissed, icon: ShieldCheck },
   ] : [], [data]);
+  const availableActions = useMemo(() => {
+    if (!detail) return ['none'] as ModerationAction[];
+    const applied = new Set(detail.history.map((event) => event.action));
+    return (['none', 'warn', 'protect_reporter', 'revoke_sessions', 'suspend_24h', 'suspend_7d'] as ModerationAction[]).filter((candidate) => {
+      if (candidate === 'none') return true;
+      if (applied.has(candidate)) return false;
+      if (candidate === 'protect_reporter' && detail.contactBlocked) return false;
+      if (['suspend_24h', 'suspend_7d'].includes(candidate) && detail.accountModeration.suspendedUntil) return false;
+      return true;
+    });
+  }, [detail]);
+  const hasDecisionChange = Boolean(detail && (
+    decisionStatus !== detail.status || action !== 'none' || note.trim()
+  ));
 
   return (
     <div className="page reports-admin-page">
@@ -273,18 +305,27 @@ export function AdminPage() {
 
               {detail.status === 'open' && <button className="start-review-button" disabled={saving} onClick={() => void saveDecision({ status: 'reviewing', action: 'none', note: 'بدأت مراجعة البلاغ.' })}><Clock3 />بدء مراجعة البلاغ وتعيينه لي</button>}
 
-              <section className="case-decision">
+              {(detail.accountModeration.suspendedUntil || detail.reporterProtected) && <section className="case-recovery">
+                <h3><Unlock />رفع القيود الحالية</h3>
+                <p>هذه الإجراءات منفصلة عن حالة البلاغ، لذلك يمكن تنفيذها حتى بعد إغلاقه.</p>
+                <div>
+                  {detail.accountModeration.suspendedUntil && <button disabled={saving} onClick={() => void saveDecision({ status: detail.status, action: 'restore_account', note: 'تم رفع تعليق الحساب يدويًا من مركز البلاغات.' })}><Unlock /><span><strong>رفع تعليق الحساب الآن</strong><small>السماح بتسجيل الدخول مجددًا فورًا</small></span></button>}
+                  {detail.reporterProtected && <button disabled={saving} onClick={() => void saveDecision({ status: detail.status, action: 'restore_contact', note: 'تم رفع حظر الحماية بين الطرفين من مركز البلاغات.' })}><ShieldOff /><span><strong>رفع حظر التواصل</strong><small>إلغاء الحظر الإداري بين الطرفين</small></span></button>}
+                </div>
+              </section>}
+
+              {detail.status === 'reviewing' ? <section className="case-decision">
                 <h3><LockKeyhole />القرار الإداري</h3>
-                <label><span>حالة البلاغ بعد الحفظ</span><select value={decisionStatus} onChange={(event) => setDecisionStatus(event.target.value as ReportStatus)}>{Object.entries(statusCopy).map(([value, copy]) => <option key={value} value={value}>{copy.label} — {copy.hint}</option>)}</select></label>
-                <label><span>الإجراء على الحساب</span><select value={action} onChange={(event) => setAction(event.target.value as ModerationAction)}>{Object.entries(actionCopy).map(([value, copy]) => <option key={value} value={value}>{copy.label}</option>)}</select><small>{actionCopy[action].hint}</small></label>
+                <label><span>حالة البلاغ بعد الحفظ</span><select value={decisionStatus} onChange={(event) => setDecisionStatus(event.target.value as ReportStatus)}><option value="reviewing">{statusCopy.reviewing.label} — إبقاء الملف مفتوحًا</option><option value="resolved">{statusCopy.resolved.label} — إغلاق بعد ثبوت المخالفة</option><option value="dismissed">{statusCopy.dismissed.label} — إغلاق دون مخالفة</option></select></label>
+                <label><span>الإجراء على الحساب</span><select value={action} onChange={(event) => setAction(event.target.value as ModerationAction)}>{availableActions.map((value) => <option key={value} value={value}>{actionCopy[value].label}</option>)}</select><small>{actionCopy[action].hint}</small></label>
                 <label><span>ملاحظة القرار</span><textarea value={note} maxLength={1000} onChange={(event) => setNote(event.target.value)} placeholder="اكتب سبب القرار والمعلومات التي راجعتها. ستبقى هذه الملاحظة في السجل الإداري…" /><small>{note.length} / 1000</small></label>
-                <button className="button button-primary save-report-decision" disabled={saving} onClick={() => void saveDecision()}>{saving ? <RefreshCw className="spin" /> : <CheckCircle2 />}{saving ? 'جارٍ التنفيذ…' : 'حفظ القرار وتنفيذ الإجراء'}</button>
-              </section>
+                <button className="button button-primary save-report-decision" disabled={saving || !hasDecisionChange} onClick={() => void saveDecision()}>{saving ? <RefreshCw className="spin" /> : <CheckCircle2 />}{saving ? 'جارٍ التنفيذ…' : 'حفظ القرار وتنفيذ الإجراء'}</button>
+              </section> : ['resolved', 'dismissed'].includes(detail.status) ? <section className="case-closed"><ShieldCheck /><span><strong>تم إغلاق هذا البلاغ نهائيًا</strong><small>لا يمكن تغيير حالته أو تطبيق عقوبة جديدة. يمكن فقط رفع قيد سابق من الأعلى.</small></span></section> : null}
 
               <section className="case-history">
                 <h3><History />سجل المعالجة</h3>
                 {!detail.history.length && <p className="history-empty">لم تُسجل إجراءات إدارية بعد.</p>}
-                {detail.history.map((event) => <article key={event.id}><i /><div><header><strong>{actionCopy[event.action as ModerationAction]?.label ?? event.message}</strong><time>{new Date(event.createdAt).toLocaleString('ar')}</time></header><p>{event.note || event.message}</p><small>{event.admin?.username ?? 'النظام'}{event.previousStatus && event.nextStatus ? ` · ${statusCopy[event.previousStatus as ReportStatus]?.label ?? event.previousStatus} ← ${statusCopy[event.nextStatus as ReportStatus]?.label ?? event.nextStatus}` : ''}</small></div></article>)}
+                {detail.history.map((event) => <article key={event.id}><i /><div><header><strong>{actionCopy[event.action as ModerationAction]?.label ?? event.message}</strong><time>{new Date(event.createdAt).toLocaleString('ar')}</time></header><p>{event.note || event.message}</p><small>{event.admin?.username ?? 'النظام'}{event.statusChanged && event.previousStatus && event.nextStatus ? ` · ${statusCopy[event.previousStatus as ReportStatus]?.label ?? event.previousStatus} ← ${statusCopy[event.nextStatus as ReportStatus]?.label ?? event.nextStatus}` : ''}</small></div></article>)}
               </section>
             </div>
           </>}

@@ -6,6 +6,12 @@ import { AppError } from '../utils/errors.js';
 import { mapUser } from '../utils/mappers.js';
 
 export const privacyService = {
+  async hasDirectBlock(blockerId: string, blockedId: string) {
+    if (isLocalDevelopment) return localDb.read((state) => state.blocks.some((item) => item.blocker_id === blockerId && item.blocked_id === blockedId));
+    const { data, error } = await db.from('user_blocks').select('blocker_id').eq('blocker_id', blockerId).eq('blocked_id', blockedId).maybeSingle();
+    if (error) throw new AppError(500, 'Could not inspect block state', 'BLOCK_STATE_FAILED');
+    return Boolean(data);
+  },
   async isBlocked(a: string, b: string) {
     if (isLocalDevelopment) return localDb.read((state) => state.blocks.some((item) => (item.blocker_id === a && item.blocked_id === b) || (item.blocker_id === b && item.blocked_id === a)));
     const { data } = await db.from('user_blocks').select('blocker_id').or(`and(blocker_id.eq.${a},blocked_id.eq.${b}),and(blocker_id.eq.${b},blocked_id.eq.${a})`).maybeSingle();
@@ -25,12 +31,15 @@ export const privacyService = {
       if (!state.blocks.some((item) => item.blocker_id === userId && item.blocked_id === blockedId)) state.blocks.push({ blocker_id: userId, blocked_id: blockedId, created_at: new Date().toISOString() });
       state.friends = state.friends.filter((item) => !([item.requester_id, item.receiver_id].includes(userId) && [item.requester_id, item.receiver_id].includes(blockedId)));
     });
-    await db.from('user_blocks').upsert({ blocker_id: userId, blocked_id: blockedId });
-    await db.from('friends').delete().or(`and(requester_id.eq.${userId},receiver_id.eq.${blockedId}),and(requester_id.eq.${blockedId},receiver_id.eq.${userId})`);
+    const { error: blockError } = await db.from('user_blocks').upsert({ blocker_id: userId, blocked_id: blockedId });
+    if (blockError) throw new AppError(500, 'Could not block user', 'BLOCK_FAILED');
+    const { error: friendshipError } = await db.from('friends').delete().or(`and(requester_id.eq.${userId},receiver_id.eq.${blockedId}),and(requester_id.eq.${blockedId},receiver_id.eq.${userId})`);
+    if (friendshipError) throw new AppError(500, 'Could not remove friendship after blocking', 'BLOCK_FAILED');
   },
   async unblock(userId: string, blockedId: string) {
     if (isLocalDevelopment) return localDb.mutate((state) => { state.blocks = state.blocks.filter((item) => item.blocker_id !== userId || item.blocked_id !== blockedId); });
-    await db.from('user_blocks').delete().eq('blocker_id', userId).eq('blocked_id', blockedId);
+    const { error } = await db.from('user_blocks').delete().eq('blocker_id', userId).eq('blocked_id', blockedId);
+    if (error) throw new AppError(500, 'Could not unblock user', 'UNBLOCK_FAILED');
   },
   async report(reporterId: string, reportedId: string, reason: string, details?: string) {
     if (reporterId === reportedId) throw new AppError(400, 'You cannot report yourself', 'SELF_REPORT');

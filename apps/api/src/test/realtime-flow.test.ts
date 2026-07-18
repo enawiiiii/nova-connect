@@ -166,6 +166,14 @@ describe('authenticated realtime flow', () => {
       status: 'open',
     });
 
+    const startedReview = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
+      status: 'reviewing',
+      action: 'none',
+      note: 'Started the automated moderation flow.',
+    });
+    expect(startedReview.status).toBe(200);
+    expect(startedReview.body.data.status).toBe('reviewing');
+
     const reviewing = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
       status: 'reviewing',
       action: 'warn',
@@ -176,6 +184,52 @@ describe('authenticated realtime flow', () => {
     expect(reviewing.body.data.history[0]).toMatchObject({ action: 'warn', note: 'Reviewed in the automated moderation flow.' });
     const warnings = await second.agent.get('/api/v1/notifications').set(auth(second.accessToken));
     expect(warnings.body.data.some((item: { type: string; content: string }) => item.type === 'system' && item.content.includes('تنبيه'))).toBe(true);
+
+    const repeatedWarning = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
+      status: 'reviewing',
+      action: 'warn',
+      note: 'Trying the same action twice.',
+    });
+    expect(repeatedWarning.status).toBe(409);
+    expect(repeatedWarning.body.error.code).toBe('ACTION_ALREADY_APPLIED');
+
+    const protectedReporter = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
+      status: 'reviewing',
+      action: 'protect_reporter',
+      note: 'Protect both parties while the report is reviewed.',
+    });
+    expect(protectedReporter.status).toBe(200);
+    expect(protectedReporter.body.data.reporterProtected).toBe(true);
+    const repeatedProtection = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
+      status: 'reviewing',
+      action: 'protect_reporter',
+    });
+    expect(repeatedProtection.status).toBe(409);
+    expect(repeatedProtection.body.error.code).toBe('ACTION_ALREADY_APPLIED');
+    const restoredContact = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
+      status: 'reviewing',
+      action: 'restore_contact',
+      note: 'Administrative contact protection removed.',
+    });
+    expect(restoredContact.status).toBe(200);
+    expect(restoredContact.body.data.reporterProtected).toBe(false);
+
+    expect((await first.agent.post('/api/v1/privacy/block').set(auth(first.accessToken)).send({ userId: second.id })).status).toBe(204);
+    const manuallyBlockedDetail = await first.agent.get(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken));
+    expect(manuallyBlockedDetail.body.data).toMatchObject({ contactBlocked: true, reporterProtected: false });
+    const cannotRemoveManualBlock = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
+      status: 'reviewing',
+      action: 'restore_contact',
+    });
+    expect(cannotRemoveManualBlock.status).toBe(409);
+    expect(cannotRemoveManualBlock.body.error.code).toBe('REPORTER_NOT_PROTECTED');
+
+    const noChange = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
+      status: 'reviewing',
+      action: 'none',
+    });
+    expect(noChange.status).toBe(409);
+    expect(noChange.body.error.code).toBe('NO_REPORT_CHANGE');
 
     const suspended = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
       status: 'resolved',
@@ -190,6 +244,13 @@ describe('authenticated realtime flow', () => {
     const blockedLogin = await second.agent.post('/api/v1/auth/login').send({ email: second.email, password: 'StrongPass123' });
     expect(blockedLogin.status).toBe(403);
     expect(blockedLogin.body.error.code).toBe('ACCOUNT_SUSPENDED');
+    const reopened = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
+      status: 'reviewing',
+      action: 'none',
+      note: 'Trying to reopen a closed report.',
+    });
+    expect(reopened.status).toBe(409);
+    expect(reopened.body.error.code).toBe('REPORT_STATUS_LOCKED');
 
     const restored = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
       status: 'resolved',
@@ -198,6 +259,12 @@ describe('authenticated realtime flow', () => {
     });
     expect(restored.status).toBe(200);
     expect(restored.body.data.accountModeration.suspendedUntil).toBeNull();
+    const restoredTwice = await first.agent.patch(`/api/v1/admin/reports/${reportId}`).set(auth(first.accessToken)).send({
+      status: 'resolved',
+      action: 'restore_account',
+    });
+    expect(restoredTwice.status).toBe(409);
+    expect(restoredTwice.body.error.code).toBe('ACCOUNT_NOT_SUSPENDED');
     expect((await second.agent.post('/api/v1/auth/login').send({ email: second.email, password: 'StrongPass123' })).status).toBe(200);
   }, 30_000);
 });
