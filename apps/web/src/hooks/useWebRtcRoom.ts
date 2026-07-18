@@ -11,6 +11,7 @@ interface RemotePeer {
 }
 
 type CameraFacingMode = 'user' | 'environment';
+type CallQuality = 'connecting' | 'excellent' | 'good' | 'poor';
 
 const fallbackIceServers: RTCIceServer[] = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] },
@@ -43,6 +44,11 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
   const [supportsCameraFlip, setSupportsCameraFlip] = useState(false);
   const [switchingCamera, setSwitchingCamera] = useState(false);
   const [sharingScreen, setSharingScreen] = useState(false);
+  const [mediaDevices, setMediaDevices] = useState<MediaDeviceInfo[]>([]);
+  const [microphoneId, setMicrophoneId] = useState('');
+  const [speakerId, setSpeakerId] = useState('');
+  const [quality, setQuality] = useState<CallQuality>('connecting');
+  const [reconnecting, setReconnecting] = useState(false);
   const supportsScreenShare = Boolean(navigator.mediaDevices?.getDisplayMedia);
 
   const createPeer = useCallback((userId: string, username = 'Friend') => {
@@ -64,7 +70,23 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
       }
     };
     peer.onconnectionstatechange = () => {
-      if (['failed', 'closed', 'disconnected'].includes(peer.connectionState)) {
+      if (peer.connectionState === 'connected') {
+        setReconnecting(false);
+        setQuality((current) => current === 'connecting' ? 'good' : current);
+      } else if (['failed', 'disconnected'].includes(peer.connectionState)) {
+        setReconnecting(true);
+        setQuality('poor');
+        try {
+          peer.restartIce();
+          void peer.createOffer({ iceRestart: true }).then(async (offer) => {
+            await peer.setLocalDescription(offer);
+            getSocket()?.emit('webrtc:signal', { roomId, targetUserId: userId, description: peer.localDescription });
+          }).catch(() => undefined);
+        } catch {
+          // A later socket reconnect can retry signaling.
+        }
+      }
+      if (peer.connectionState === 'closed') {
         setRemotePeers((items) => items.filter((item) => item.userId !== userId));
       }
     };
@@ -210,9 +232,13 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
           return;
         }
         localStream.current = stream;
+        setMicrophoneId(stream.getAudioTracks()[0]?.getSettings().deviceId ?? '');
         if (type === 'video' && navigator.mediaDevices.enumerateDevices) {
           void navigator.mediaDevices.enumerateDevices()
-            .then((devices) => setSupportsCameraFlip(devices.filter((device) => device.kind === 'videoinput').length > 1))
+            .then((devices) => {
+              setMediaDevices(devices);
+              setSupportsCameraFlip(devices.filter((device) => device.kind === 'videoinput').length > 1);
+            })
             .catch(() => setSupportsCameraFlip(false));
         }
         if (localVideo.current) {
@@ -237,6 +263,19 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
     };
 
     void start();
+    const qualityTimer = window.setInterval(() => {
+      const connections = [...peerMap.values()];
+      if (!connections.length) return setQuality('connecting');
+      void Promise.all(connections.map((peer) => peer.getStats())).then((reports) => {
+        let worstRtt = 0;
+        let lost = 0;
+        reports.forEach((report) => report.forEach((stat) => {
+          if (stat.type === 'candidate-pair' && stat.state === 'succeeded' && typeof stat.currentRoundTripTime === 'number') worstRtt = Math.max(worstRtt, stat.currentRoundTripTime);
+          if (stat.type === 'inbound-rtp' && typeof stat.packetsLost === 'number') lost += Math.max(0, stat.packetsLost);
+        }));
+        setQuality(worstRtt > 0.45 || lost > 20 ? 'poor' : worstRtt > 0.2 || lost > 5 ? 'good' : 'excellent');
+      }).catch(() => undefined);
+    }, 3_000);
     return () => {
       active = false;
       notifyLeave();
@@ -246,6 +285,7 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
       socket?.off('call:ended', onEnded);
       socket?.off('connect', onConnect);
       window.removeEventListener('pagehide', notifyLeave);
+      window.clearInterval(qualityTimer);
       localStream.current?.getTracks().forEach((track) => track.stop());
       localStream.current = null;
       peerMap.forEach((peer) => peer.close());
@@ -344,6 +384,31 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
     }
   };
 
+  const switchMicrophone = async (deviceId: string) => {
+    if (!deviceId || !navigator.mediaDevices?.getUserMedia) return;
+    try {
+      const replacementStream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId }, echoCancellation: true, noiseSuppression: true }, video: false });
+      const replacement = replacementStream.getAudioTracks()[0];
+      const stream = localStream.current;
+      if (!replacement || !stream) return;
+      replacement.enabled = !muted;
+      const previous = stream.getAudioTracks()[0];
+      if (previous) {
+        stream.removeTrack(previous);
+        previous.stop();
+      }
+      stream.addTrack(replacement);
+      await Promise.all([...peers.current.values()].map(async (peer) => {
+        const sender = peer.getSenders().find((item) => item.track?.kind === 'audio');
+        if (sender) await sender.replaceTrack(replacement);
+        else peer.addTrack(replacement, stream);
+      }));
+      setMicrophoneId(deviceId);
+    } catch {
+      setError('تعذر تبديل الميكروفون. تحقق من أذونات الجهاز.');
+    }
+  };
+
   const leaveRoom = () => leaveRoomAction.current();
 
   return {
@@ -358,11 +423,18 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
     supportsCameraFlip,
     switchingCamera,
     sharingScreen,
+    mediaDevices,
+    microphoneId,
+    speakerId,
+    quality,
+    reconnecting,
     supportsScreenShare,
     toggleMute,
     toggleCamera,
     switchCamera,
     shareScreen,
+    switchMicrophone,
+    setSpeakerId,
     leaveRoom,
   };
 }
