@@ -88,6 +88,15 @@ describe('authenticated realtime flow', () => {
     const thirdIncomingRequests = await third.agent.get('/api/v1/friends/requests').set(auth(third.accessToken));
     expect((await third.agent.patch(`/api/v1/friends/requests/${thirdIncomingRequests.body.data[0].id}`).set(auth(third.accessToken)).send({ action: 'accept' })).status).toBe(204);
 
+    const report = await first.agent.post('/api/v1/privacy/reports').set(auth(first.accessToken)).send({ userId: second.id, reason: 'harassment', details: 'Automated report flow check' });
+    expect(report.status).toBe(201);
+    expect(report.body.data.report).toMatchObject({ status: 'open' });
+    const { localDb } = await import('../database/local.database.js');
+    await localDb.mutate((state) => { const admin = state.users.find((item) => item.id === first.id); if (admin) admin.is_admin = true; });
+    const adminReports = await first.agent.get('/api/v1/admin/reports').set(auth(first.accessToken));
+    expect(adminReports.status).toBe(200);
+    expect(adminReports.body.data.some((item: { id: string }) => item.id === report.body.data.report.id)).toBe(true);
+
     const firstSocket = await connectedClient(first.accessToken);
     const secondSocket = await connectedClient(second.accessToken);
     try {

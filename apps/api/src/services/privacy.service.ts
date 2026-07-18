@@ -35,9 +35,12 @@ export const privacyService = {
   async report(reporterId: string, reportedId: string, reason: string, details?: string) {
     if (reporterId === reportedId) throw new AppError(400, 'You cannot report yourself', 'SELF_REPORT');
     if (isLocalDevelopment) return localDb.mutate((state) => {
-      state.reports.push({ id: crypto.randomUUID(), reporter_id: reporterId, reported_id: reportedId, reason, details: details?.trim() || null, status: 'open', created_at: new Date().toISOString() });
+      const report = { id: crypto.randomUUID(), reporter_id: reporterId, reported_id: reportedId, reason, details: details?.trim() || null, status: 'open', created_at: new Date().toISOString() };
+      state.reports.push(report);
+      return report;
     });
-    const { error } = await db.from('user_reports').insert({ reporter_id: reporterId, reported_id: reportedId, reason, details: details?.trim() || null });
-    if (error) throw new AppError(500, 'Could not submit report', 'REPORT_FAILED');
+    const { data, error } = await db.from('user_reports').insert({ reporter_id: reporterId, reported_id: reportedId, reason, details: details?.trim() || null }).select('id,status,created_at').single();
+    if (error || !data) throw new AppError(500, 'Could not submit report', 'REPORT_FAILED');
+    return data;
   },
 };

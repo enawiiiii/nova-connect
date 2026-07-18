@@ -61,9 +61,17 @@ export const monitoringService = {
 
   async reports() {
     if (isLocalDevelopment) return localDb.read((state) => state.reports.slice().sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 100));
-    const { data, error } = await db.from('user_reports').select('*,reporter:users!user_reports_reporter_id_fkey(username),reported:users!user_reports_reported_id_fkey(username)').order('created_at', { ascending: false }).limit(100);
+    const { data, error } = await db.from('user_reports').select('id,reporter_id,reported_id,reason,details,status,created_at').order('created_at', { ascending: false }).limit(100);
     if (error) throw new AppError(500, 'Could not load reports', 'REPORTS_LOAD_FAILED');
-    return data ?? [];
+    const rows = data ?? [];
+    const userIds = [...new Set(rows.flatMap((item) => [item.reporter_id, item.reported_id]))];
+    const users = userIds.length ? ((await db.from('users').select('id,username').in('id', userIds)).data ?? []) : [];
+    const names = new Map(users.map((user) => [user.id, user.username]));
+    return rows.map((item) => ({
+      ...item,
+      reporter: { username: names.get(item.reporter_id) ?? 'مستخدم محذوف' },
+      reported: { username: names.get(item.reported_id) ?? 'مستخدم محذوف' },
+    }));
   },
 
   async updateReport(id: string, status: 'open' | 'reviewing' | 'resolved' | 'dismissed') {

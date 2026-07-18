@@ -28,6 +28,7 @@ export function ChatPanel({ friend }: { friend: Friend }) {
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
   const [messageError, setMessageError] = useState('');
+  const [messageNotice, setMessageNotice] = useState('');
   const [showOptions, setShowOptions] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -139,9 +140,15 @@ export function ChatPanel({ friend }: { friend: Friend }) {
     if (!accessToken) return;
     const details = window.prompt('اكتب سبب البلاغ باختصار:');
     if (details === null) return;
-    await api('/privacy/reports', { method: 'POST', token: accessToken, body: { userId: friend.id, reason: 'other', details } });
-    setMessageError('تم إرسال البلاغ للمراجعة.');
-    setShowOptions(false);
+    setMessageError('');
+    setMessageNotice('');
+    try {
+      await api('/privacy/reports', { method: 'POST', token: accessToken, body: { userId: friend.id, reason: 'other', details } });
+      setMessageNotice('تم تسجيل البلاغ وسيظهر في لوحة الإدارة خلال 10 ثوانٍ.');
+      setShowOptions(false);
+    } catch (error) {
+      setMessageError(error instanceof Error ? error.message : 'تعذر إرسال البلاغ.');
+    }
   };
 
   return (
@@ -179,6 +186,7 @@ export function ChatPanel({ friend }: { friend: Friend }) {
         <div ref={bottomRef} />
       </div>
       {messageError && <div className="message-send-error" role="alert">{messageError}</div>}
+      {messageNotice && <div className="message-send-notice" role="status">{messageNotice}</div>}
       {(replying || editing) && <div className="compose-context"><span>{editing ? 'تعديل الرسالة' : `رد على: ${replying?.messageText || replying?.attachmentName || 'مرفق'}`}</span><button onClick={() => { setReplying(null); setEditing(null); setText(''); }}>×</button></div>}
       <form className="chat-compose" onSubmit={(event) => void submit(event)}>
         <input ref={fileRef} hidden type="file" accept="image/jpeg,image/png,image/webp,image/gif,audio/*,application/pdf" onChange={(event) => void upload(event.target.files?.[0])} />

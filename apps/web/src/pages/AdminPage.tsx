@@ -1,5 +1,5 @@
-import { Activity, AlertTriangle, Flag, MessageCircle, Phone, Users } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { Activity, AlertTriangle, Flag, MessageCircle, Phone, RefreshCw, Users } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '../components/PageHeader';
 import { api } from '../lib/api';
 import { useAuthStore } from '../stores/auth.store';
@@ -14,9 +14,12 @@ export function AdminPage() {
   const [reports, setReports] = useState<ReportItem[]>([]);
   const [errors, setErrors] = useState<EventItem[]>([]);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!accessToken) return;
+    setLoading(true);
     setError('');
     try {
       const [nextOverview, nextReports, nextErrors] = await Promise.all([
@@ -27,11 +30,20 @@ export function AdminPage() {
       setOverview(nextOverview);
       setReports(nextReports);
       setErrors(nextErrors);
+      setLastUpdated(new Date());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'تعذر تحميل لوحة الإدارة.');
+    } finally {
+      setLoading(false);
     }
-  };
-  useEffect(() => { void load(); }, [accessToken]);
+  }, [accessToken]);
+  useEffect(() => {
+    void load();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load();
+    }, 10_000);
+    return () => window.clearInterval(interval);
+  }, [load]);
 
   const updateReport = async (id: string, status: 'reviewing' | 'resolved' | 'dismissed') => {
     if (!accessToken) return;
@@ -50,7 +62,7 @@ export function AdminPage() {
 
   return (
     <div className="page admin-page">
-      <PageHeader title="إدارة NOVA" subtitle="مراقبة الصحة التشغيلية والبلاغات دون الاطلاع على محتوى المحادثات" />
+      <PageHeader title="إدارة NOVA" subtitle={lastUpdated ? `آخر تحديث ${lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} · تحديث تلقائي كل 10 ثوانٍ` : 'مراقبة الصحة التشغيلية والبلاغات دون الاطلاع على محتوى المحادثات'} action={<button className="button button-ghost admin-refresh" disabled={loading} onClick={() => void load()}><RefreshCw className={loading ? 'spin' : ''} />تحديث</button>} />
       {error && <div className="call-page-error" role="alert">{error}</div>}
       {overview && <>
         <section className="admin-metrics">{metrics.map(({ label, value, icon: Icon }) => <article className="glass-panel" key={label}><Icon /><span>{label}</span><strong>{value.toLocaleString()}</strong></article>)}</section>
