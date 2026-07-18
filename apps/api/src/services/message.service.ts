@@ -13,6 +13,13 @@ function localMessageRow(message: LocalMessage) {
   return { ...message, reactions: message.reactions ?? [] } as unknown as Record<string, unknown>;
 }
 
+async function mapPrivateMessage(row: Record<string, unknown>) {
+  const message = mapMessage(row);
+  if (!message.attachmentUrl || message.deletedAt) return message;
+  const { data, error } = await db.storage.from('message-media').createSignedUrl(message.attachmentUrl, 60 * 60);
+  return { ...message, attachmentUrl: error ? null : data.signedUrl };
+}
+
 export const messageService = {
   async conversation(userId: string, otherUserId: string, before?: string) {
     if (await privacyService.isBlocked(userId, otherUserId)) throw new AppError(403, 'Conversation is blocked', 'USER_BLOCKED');
@@ -22,7 +29,7 @@ export const messageService = {
     if (before) query = query.lt('created_at', before);
     const { data, error } = await query;
     if (error) throw new AppError(500, 'Could not load messages');
-    return (data ?? []).reverse().map(mapMessage);
+    return Promise.all((data ?? []).reverse().map((row) => mapPrivateMessage(row)));
   },
 
   async send(senderId: string, receiverId: string, messageText: string, replyToId?: string | null) {
@@ -59,7 +66,7 @@ export const messageService = {
       const path = `${senderId}/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${extension}`;
       const { error } = await db.storage.from('message-media').upload(path, file.buffer, { contentType: file.mimetype, upsert: false });
       if (error) throw new AppError(500, 'Could not upload attachment', 'ATTACHMENT_UPLOAD_FAILED');
-      attachmentUrl = db.storage.from('message-media').getPublicUrl(path).data.publicUrl;
+      attachmentUrl = path;
     }
     if (isLocalDevelopment) return localDb.mutate((state) => {
       const message: LocalMessage = {
@@ -75,7 +82,7 @@ export const messageService = {
       attachment_url: attachmentUrl, attachment_name: file.originalname.slice(0, 255), reply_to_id: replyToId ?? null,
     }).select(messageSelect).single();
     if (error || !data) throw new AppError(500, 'Could not send attachment', 'ATTACHMENT_SEND_FAILED');
-    return mapMessage(data);
+    return mapPrivateMessage(data);
   },
 
   async edit(userId: string, messageId: string, text: string) {
@@ -89,7 +96,7 @@ export const messageService = {
     });
     const { data, error } = await db.from('messages').update({ message_text: text.trim(), edited_at: editedAt }).eq('id', messageId).eq('sender_id', userId).is('deleted_at', null).select(messageSelect).maybeSingle();
     if (error || !data) throw new AppError(404, 'Message not found', 'MESSAGE_NOT_FOUND');
-    return { message: mapMessage(data), otherUserId: String(data.receiver_id) };
+    return { message: await mapPrivateMessage(data), otherUserId: String(data.receiver_id) };
   },
 
   async remove(userId: string, messageId: string) {
@@ -102,8 +109,10 @@ export const messageService = {
       message.attachment_url = null;
       return { message: mapMessage(localMessageRow(message)), otherUserId: message.receiver_id };
     });
+    const { data: existing } = await db.from('messages').select('attachment_url').eq('id', messageId).eq('sender_id', userId).maybeSingle();
     const { data, error } = await db.from('messages').update({ message_text: '', attachment_url: null, deleted_at: deletedAt }).eq('id', messageId).eq('sender_id', userId).select(messageSelect).maybeSingle();
     if (error || !data) throw new AppError(404, 'Message not found', 'MESSAGE_NOT_FOUND');
+    if (existing?.attachment_url) await db.storage.from('message-media').remove([existing.attachment_url]);
     return { message: mapMessage(data), otherUserId: String(data.receiver_id) };
   },
 
@@ -128,7 +137,7 @@ export const messageService = {
     else await db.from('message_reactions').insert({ message_id: messageId, user_id: userId, emoji });
     const { data } = await db.from('messages').select(messageSelect).eq('id', messageId).single();
     const otherUserId = source.sender_id === userId ? source.receiver_id : source.sender_id;
-    return { message: mapMessage(data!), otherUserId: String(otherUserId) };
+    return { message: await mapPrivateMessage(data!), otherUserId: String(otherUserId) };
   },
 
   async markSeen(userId: string, senderId: string) {

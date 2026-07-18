@@ -27,7 +27,7 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values (
   'message-media',
   'message-media',
-  true,
+  false,
   10485760,
   array['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'audio/webm', 'audio/mp4', 'audio/mpeg', 'application/pdf']
 )
