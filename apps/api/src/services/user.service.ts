@@ -176,6 +176,7 @@ export const userService = {
         state.notifications = state.notifications.filter((item) => item.user_id !== id);
         state.refreshTokens = state.refreshTokens.filter((item) => item.user_id !== id);
         state.verificationTokens = state.verificationTokens.filter((item) => item.user_id !== id);
+        state.passwordResetTokens = state.passwordResetTokens.filter((item) => item.user_id !== id);
         state.pushSubscriptions = state.pushSubscriptions.filter((item) => item.user_id !== id);
         state.groups = state.groups.filter((item) => item.owner_id !== id);
         state.groupMembers = state.groupMembers.filter((item) => item.user_id !== id && !ownedGroupIds.includes(item.group_id));

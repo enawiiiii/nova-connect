@@ -7,7 +7,7 @@ import { localDb, type LocalUser } from '../database/local.database.js';
 import { AppError } from '../utils/errors.js';
 import { mapUser } from '../utils/mappers.js';
 import { createOpaqueToken, hashToken, signAccessToken } from './token.service.js';
-import { localVerificationPath, sendVerificationEmail } from './mail.service.js';
+import { localVerificationPath, passwordResetUrl, sendPasswordResetEmail, sendVerificationEmail } from './mail.service.js';
 
 interface Credentials { email: string; password: string; totpCode?: string }
 interface RegisterInput extends Credentials { username: string }
@@ -278,5 +278,59 @@ export const authService = {
     if (!secret || !(await verify({ secret, token: code })).valid) throw new AppError(422, 'Authenticator code is invalid', 'INVALID_TWO_FACTOR_CODE');
     if (isLocalDevelopment) await localDb.mutate((state) => { const user = state.users.find((item) => item.id === userId)!; user.totp_enabled = false; user.totp_secret = null; });
     else await db.from('users').update({ totp_enabled: false, totp_secret: null }).eq('id', userId);
+  },
+
+  async requestPasswordReset(rawEmail: string) {
+    const email = rawEmail.trim().toLowerCase();
+    const user = isLocalDevelopment
+      ? await localDb.read((state) => state.users.find((item) => item.email === email))
+      : (await db.from('users').select('id,email,username').eq('email', email).maybeSingle()).data;
+    if (!user) return {};
+    const token = createOpaqueToken();
+    const now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    if (isLocalDevelopment) {
+      await localDb.mutate((state) => {
+        state.passwordResetTokens.forEach((item) => { if (item.user_id === user.id && !item.revoked_at) item.revoked_at = now; });
+        state.passwordResetTokens.push({ id: crypto.randomUUID(), user_id: user.id, token_hash: hashToken(token), expires_at: expiresAt, revoked_at: null, created_at: now });
+      });
+    } else {
+      await db.from('password_reset_tokens').update({ used_at: now }).eq('user_id', user.id).is('used_at', null);
+      const { error } = await db.from('password_reset_tokens').insert({ user_id: user.id, token_hash: hashToken(token), expires_at: expiresAt });
+      if (error) throw new AppError(500, 'Could not create password reset link', 'PASSWORD_RESET_CREATE_FAILED');
+    }
+    try {
+      const sent = await sendPasswordResetEmail(user.email, user.username, token);
+      return { sent, ...(isLocalDevelopment ? { resetUrl: passwordResetUrl(token).replace(env.CLIENT_URL.split(',')[0]!.trim(), '') } : {}) };
+    } catch (error) {
+      console.error('Could not send password reset email', error);
+      return {};
+    }
+  },
+
+  async resetPassword(token: string, newPassword: string) {
+    const tokenHash = hashToken(token);
+    const now = new Date().toISOString();
+    if (isLocalDevelopment) {
+      const reset = await localDb.read((state) => state.passwordResetTokens.find((item) => item.token_hash === tokenHash && !item.revoked_at && item.expires_at > now));
+      if (!reset) throw new AppError(400, 'Password reset link is invalid or expired', 'INVALID_PASSWORD_RESET');
+      await localDb.mutate(async (state) => {
+        const user = state.users.find((item) => item.id === reset.user_id);
+        if (!user) throw new AppError(400, 'Password reset link is invalid or expired', 'INVALID_PASSWORD_RESET');
+        user.password_hash = await bcrypt.hash(newPassword, env.BCRYPT_ROUNDS);
+        state.passwordResetTokens.forEach((item) => { if (item.user_id === user.id && !item.revoked_at) item.revoked_at = now; });
+        state.refreshTokens.forEach((item) => { if (item.user_id === user.id && !item.revoked_at) item.revoked_at = now; });
+      });
+      return;
+    }
+    const { data: reset } = await db.from('password_reset_tokens').select('id,user_id').eq('token_hash', tokenHash).is('used_at', null).gt('expires_at', now).maybeSingle();
+    if (!reset) throw new AppError(400, 'Password reset link is invalid or expired', 'INVALID_PASSWORD_RESET');
+    const passwordHash = await bcrypt.hash(newPassword, env.BCRYPT_ROUNDS);
+    const { error } = await db.from('users').update({ password_hash: passwordHash }).eq('id', reset.user_id);
+    if (error) throw new AppError(500, 'Could not reset password', 'PASSWORD_RESET_FAILED');
+    await Promise.all([
+      db.from('password_reset_tokens').update({ used_at: now }).eq('user_id', reset.user_id).is('used_at', null),
+      db.from('refresh_tokens').update({ revoked_at: now }).eq('user_id', reset.user_id).is('revoked_at', null),
+    ]);
   },
 };

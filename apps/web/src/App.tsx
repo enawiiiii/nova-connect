@@ -8,6 +8,7 @@ import { CallPage } from './pages/CallPage';
 import { CallsPage } from './pages/CallsPage';
 import { ChatsPage } from './pages/ChatsPage';
 import { FriendsPage } from './pages/FriendsPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { LandingPage } from './pages/LandingPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ProfilePage } from './pages/ProfilePage';
@@ -31,6 +32,7 @@ export default function App() {
       <Route path="/login" element={<AuthPage mode="login" />} />
       <Route path="/register" element={<AuthPage mode="register" />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route element={<ProtectedRoute />}>
         <Route path="/app" element={<AppShell />}>
           <Route index element={<Navigate to="chats" replace />} />

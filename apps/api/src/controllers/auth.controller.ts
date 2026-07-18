@@ -64,4 +64,9 @@ export const authController = {
   async setupTotp(req: Request, res: Response) { res.json({ data: await authService.setupTotp(req.user!.id) }); },
   async enableTotp(req: Request, res: Response) { await authService.enableTotp(req.user!.id, req.body.code); res.status(204).send(); },
   async disableTotp(req: Request, res: Response) { await authService.disableTotp(req.user!.id, req.body.code); res.status(204).send(); },
+  async requestPasswordReset(req: Request, res: Response) {
+    const result = await authService.requestPasswordReset(req.body.email);
+    res.json({ data: result, message: 'If an account exists for this email, a password reset link has been sent.' });
+  },
+  async resetPassword(req: Request, res: Response) { await authService.resetPassword(req.body.token, req.body.password); res.status(204).send(); },
 };

@@ -124,6 +124,7 @@ export interface LocalState {
   notifications: LocalNotification[];
   refreshTokens: LocalToken[];
   verificationTokens: LocalToken[];
+  passwordResetTokens: LocalToken[];
   pushSubscriptions: LocalPushSubscription[];
   groups: LocalGroup[];
   groupMembers: LocalGroupMember[];
@@ -134,7 +135,7 @@ export interface LocalState {
 }
 
 const emptyState = (): LocalState => ({
-  users: [], friends: [], messages: [], calls: [], notifications: [], refreshTokens: [], verificationTokens: [], pushSubscriptions: [], groups: [], groupMembers: [], groupMessages: [], blocks: [], reports: [], appEvents: [],
+  users: [], friends: [], messages: [], calls: [], notifications: [], refreshTokens: [], verificationTokens: [], passwordResetTokens: [], pushSubscriptions: [], groups: [], groupMembers: [], groupMessages: [], blocks: [], reports: [], appEvents: [],
 });
 
 const dataPath = path.resolve(env.LOCAL_DATA_PATH);
@@ -147,6 +148,7 @@ async function load() {
   try {
     state = JSON.parse(await readFile(dataPath, 'utf8')) as LocalState;
     state.pushSubscriptions ??= [];
+    state.passwordResetTokens ??= [];
     state.groups ??= [];
     state.groupMembers ??= [];
     state.groupMessages ??= [];
