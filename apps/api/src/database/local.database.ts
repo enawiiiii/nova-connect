@@ -12,6 +12,8 @@ export interface LocalUser {
   status: 'online' | 'away' | 'busy' | 'offline';
   last_seen: string | null;
   email_verified: boolean;
+  totp_secret?: string | null;
+  totp_enabled?: boolean;
   created_at: string;
 }
 
@@ -67,7 +69,13 @@ export interface LocalToken {
   expires_at: string;
   revoked_at: string | null;
   created_at: string;
+  user_agent?: string | null;
+  ip_address?: string | null;
+  last_used_at?: string;
 }
+
+export interface LocalBlock { blocker_id: string; blocked_id: string; created_at: string }
+export interface LocalReport { id: string; reporter_id: string; reported_id: string; reason: string; details: string | null; status: string; created_at: string }
 
 export interface LocalPushSubscription {
   id: string;
@@ -115,10 +123,12 @@ export interface LocalState {
   groups: LocalGroup[];
   groupMembers: LocalGroupMember[];
   groupMessages: LocalGroupMessage[];
+  blocks: LocalBlock[];
+  reports: LocalReport[];
 }
 
 const emptyState = (): LocalState => ({
-  users: [], friends: [], messages: [], calls: [], notifications: [], refreshTokens: [], verificationTokens: [], pushSubscriptions: [], groups: [], groupMembers: [], groupMessages: [],
+  users: [], friends: [], messages: [], calls: [], notifications: [], refreshTokens: [], verificationTokens: [], pushSubscriptions: [], groups: [], groupMembers: [], groupMessages: [], blocks: [], reports: [],
 });
 
 const dataPath = path.resolve(env.LOCAL_DATA_PATH);
@@ -134,6 +144,8 @@ async function load() {
     state.groups ??= [];
     state.groupMembers ??= [];
     state.groupMessages ??= [];
+    state.blocks ??= [];
+    state.reports ??= [];
   } catch (error) {
     const code = error instanceof Error && 'code' in error ? String(error.code) : '';
     if (code !== 'ENOENT') throw error;

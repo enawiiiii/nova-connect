@@ -5,6 +5,7 @@ import { localDb, type LocalMessage } from '../database/local.database.js';
 import { AppError } from '../utils/errors.js';
 import { mapMessage } from '../utils/mappers.js';
 import { friendService } from './friend.service.js';
+import { privacyService } from './privacy.service.js';
 
 const messageSelect = '*,message_reactions(user_id,emoji)';
 
@@ -14,6 +15,7 @@ function localMessageRow(message: LocalMessage) {
 
 export const messageService = {
   async conversation(userId: string, otherUserId: string, before?: string) {
+    if (await privacyService.isBlocked(userId, otherUserId)) throw new AppError(403, 'Conversation is blocked', 'USER_BLOCKED');
     if (!(await friendService.areFriends(userId, otherUserId))) throw new AppError(403, 'Messaging is limited to friends', 'NOT_FRIENDS');
     if (isLocalDevelopment) return localDb.read((state) => state.messages.filter((message) => ((message.sender_id === userId && message.receiver_id === otherUserId) || (message.sender_id === otherUserId && message.receiver_id === userId)) && (!before || message.created_at < before)).sort((a, b) => a.created_at.localeCompare(b.created_at)).slice(-50).map((message) => mapMessage(localMessageRow(message))));
     let query = db.from('messages').select(messageSelect).or(`and(sender_id.eq.${userId},receiver_id.eq.${otherUserId}),and(sender_id.eq.${otherUserId},receiver_id.eq.${userId})`).order('created_at', { ascending: false }).limit(50);
@@ -24,6 +26,7 @@ export const messageService = {
   },
 
   async send(senderId: string, receiverId: string, messageText: string, replyToId?: string | null) {
+    if (await privacyService.isBlocked(senderId, receiverId)) throw new AppError(403, 'Messaging is blocked', 'USER_BLOCKED');
     if (!(await friendService.areFriends(senderId, receiverId))) throw new AppError(403, 'Messaging is limited to friends', 'NOT_FRIENDS');
     if (replyToId) {
       const replyExists = isLocalDevelopment
@@ -42,6 +45,7 @@ export const messageService = {
   },
 
   async sendAttachment(senderId: string, receiverId: string, file: Express.Multer.File | undefined, caption = '', replyToId?: string | null) {
+    if (await privacyService.isBlocked(senderId, receiverId)) throw new AppError(403, 'Messaging is blocked', 'USER_BLOCKED');
     if (!file) throw new AppError(422, 'Choose a file to send', 'FILE_REQUIRED');
     if (!(await friendService.areFriends(senderId, receiverId))) throw new AppError(403, 'Messaging is limited to friends', 'NOT_FRIENDS');
     const image = file.mimetype.startsWith('image/');

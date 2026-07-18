@@ -6,7 +6,7 @@ const cookieOptions = { httpOnly: true, secure: env.COOKIE_SECURE, sameSite: env
 
 export const authController = {
   async register(req: Request, res: Response) {
-    const result = await authService.register(req.body);
+    const result = await authService.register(req.body, { userAgent: req.get('user-agent'), ip: req.ip });
     if (!result.requiresEmailVerification) {
       res.cookie('nova_refresh', result.refreshToken, cookieOptions);
       res.status(201).json({
@@ -30,7 +30,7 @@ export const authController = {
     });
   },
   async login(req: Request, res: Response) {
-    const result = await authService.login(req.body);
+    const result = await authService.login(req.body, { userAgent: req.get('user-agent'), ip: req.ip });
     res.cookie('nova_refresh', result.refreshToken, cookieOptions);
     res.json({ data: { user: result.user, accessToken: result.accessToken } });
   },
@@ -58,4 +58,10 @@ export const authController = {
       message: 'If this email is awaiting verification, a new link has been sent.',
     });
   },
+  async sessions(req: Request, res: Response) { res.json({ data: await authService.sessions(req.user!.id) }); },
+  async revokeSession(req: Request, res: Response) { await authService.revokeSession(req.user!.id, String(req.params.id)); res.status(204).send(); },
+  async changePassword(req: Request, res: Response) { await authService.changePassword(req.user!.id, req.body.currentPassword, req.body.newPassword); res.status(204).send(); },
+  async setupTotp(req: Request, res: Response) { res.json({ data: await authService.setupTotp(req.user!.id) }); },
+  async enableTotp(req: Request, res: Response) { await authService.enableTotp(req.user!.id, req.body.code); res.status(204).send(); },
+  async disableTotp(req: Request, res: Response) { await authService.disableTotp(req.user!.id, req.body.code); res.status(204).send(); },
 };

@@ -6,6 +6,7 @@ import { AppError } from '../utils/errors.js';
 import { mapUser } from '../utils/mappers.js';
 import { notificationService } from './notification.service.js';
 import { pushService } from './push.service.js';
+import { privacyService } from './privacy.service.js';
 
 const friendSelect = 'id,status,requester_id,receiver_id,created_at,requester:users!friends_requester_id_fkey(id,username,avatar,bio,status,last_seen),receiver:users!friends_receiver_id_fkey(id,username,avatar,bio,status,last_seen)';
 
@@ -36,6 +37,7 @@ export const friendService = {
 
   async send(requesterId: string, receiverId: string, requesterName: string) {
     if (requesterId === receiverId) throw new AppError(400, 'You cannot add yourself', 'SELF_FRIEND');
+    if (await privacyService.isBlocked(requesterId, receiverId)) throw new AppError(403, 'Friend request is not allowed', 'USER_BLOCKED');
     if (isLocalDevelopment) {
       const receiverExists = await localDb.read((state) => state.users.some((user) => user.id === receiverId));
       if (!receiverExists) throw new AppError(404, 'User not found', 'USER_NOT_FOUND');

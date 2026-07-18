@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
+import { generateSecret, generateURI, verify } from 'otplib';
 import { env, isLocalDevelopment } from '../config/env.js';
 import { db } from '../database/supabase.js';
 import { localDb, type LocalUser } from '../database/local.database.js';
@@ -8,15 +9,16 @@ import { mapUser } from '../utils/mappers.js';
 import { createOpaqueToken, hashToken, signAccessToken } from './token.service.js';
 import { localVerificationPath, sendVerificationEmail } from './mail.service.js';
 
-interface Credentials { email: string; password: string }
+interface Credentials { email: string; password: string; totpCode?: string }
 interface RegisterInput extends Credentials { username: string }
+interface SessionMeta { userAgent?: string; ip?: string }
 
-async function createSession(user: { id: string; email: string; username: string }) {
+async function createSession(user: { id: string; email: string; username: string }, meta: SessionMeta = {}) {
   const refreshToken = createOpaqueToken();
   const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 86_400_000);
   if (isLocalDevelopment) {
     await localDb.mutate((state) => state.refreshTokens.push({
-      id: crypto.randomUUID(), user_id: user.id, token_hash: hashToken(refreshToken), expires_at: expiresAt.toISOString(), revoked_at: null, created_at: new Date().toISOString(),
+      id: crypto.randomUUID(), user_id: user.id, token_hash: hashToken(refreshToken), expires_at: expiresAt.toISOString(), revoked_at: null, created_at: new Date().toISOString(), user_agent: meta.userAgent?.slice(0, 500) ?? null, ip_address: meta.ip ?? null, last_used_at: new Date().toISOString(),
     }));
     return { accessToken: signAccessToken(user), refreshToken, expiresAt };
   }
@@ -24,6 +26,9 @@ async function createSession(user: { id: string; email: string; username: string
     user_id: user.id,
     token_hash: hashToken(refreshToken),
     expires_at: expiresAt.toISOString(),
+    user_agent: meta.userAgent?.slice(0, 500) ?? null,
+    ip_address: meta.ip ?? null,
+    last_used_at: new Date().toISOString(),
   });
   if (error) throw new AppError(500, 'Could not create session', 'SESSION_CREATE_FAILED');
   return { accessToken: signAccessToken(user), refreshToken, expiresAt };
@@ -69,7 +74,7 @@ async function createVerification(user: { id: string; email: string; username: s
 }
 
 export const authService = {
-  async register(input: RegisterInput) {
+  async register(input: RegisterInput, meta: SessionMeta = {}) {
     const email = input.email.trim().toLowerCase();
     const username = input.username.trim();
     if (isLocalDevelopment) {
@@ -81,7 +86,7 @@ export const authService = {
       };
       await localDb.mutate((state) => { state.users.push(user); });
       if (!env.REQUIRE_EMAIL_VERIFICATION) {
-        const session = await createSession(user);
+        const session = await createSession(user, meta);
         return { user: mapUser(user as unknown as Record<string, unknown>, true), requiresEmailVerification: false as const, ...session };
       }
       const verification = await createVerification(user);
@@ -103,20 +108,24 @@ export const authService = {
     if (error || !data) throw new AppError(500, 'Could not create account', 'ACCOUNT_CREATE_FAILED');
 
     if (!env.REQUIRE_EMAIL_VERIFICATION) {
-      const session = await createSession({ id: data.id, email, username });
+      const session = await createSession({ id: data.id, email, username }, meta);
       return { user: mapUser(data, true), requiresEmailVerification: false as const, ...session };
     }
     const verification = await createVerification({ id: data.id, email, username });
     return { user: mapUser(data, true), requiresEmailVerification: true as const, ...verification };
   },
 
-  async login(input: Credentials) {
+  async login(input: Credentials, meta: SessionMeta = {}) {
     if (isLocalDevelopment) {
       const email = input.email.trim().toLowerCase();
       const user = await localDb.read((state) => state.users.find((item) => item.email === email));
       if (!user || !(await bcrypt.compare(input.password, user.password_hash))) throw new AppError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
       if (env.REQUIRE_EMAIL_VERIFICATION && !user.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
-      const session = await createSession(user);
+      if (user.totp_enabled) {
+        if (!input.totpCode) throw new AppError(401, 'Enter the six-digit authenticator code', 'TWO_FACTOR_REQUIRED');
+        if (!(await verify({ secret: user.totp_secret!, token: input.totpCode })).valid) throw new AppError(401, 'Authenticator code is invalid', 'INVALID_TWO_FACTOR_CODE');
+      }
+      const session = await createSession(user, meta);
       return { user: mapUser(user as unknown as Record<string, unknown>, true), ...session };
     }
     const { data, error } = await db.from('users').select('*').eq('email', input.email.trim().toLowerCase()).maybeSingle();
@@ -124,7 +133,11 @@ export const authService = {
       throw new AppError(401, 'Invalid email or password', 'INVALID_CREDENTIALS');
     }
     if (env.REQUIRE_EMAIL_VERIFICATION && !data.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
-    const session = await createSession({ id: data.id, email: data.email, username: data.username });
+    if (data.totp_enabled) {
+      if (!input.totpCode) throw new AppError(401, 'Enter the six-digit authenticator code', 'TWO_FACTOR_REQUIRED');
+      if (!(await verify({ secret: data.totp_secret, token: input.totpCode })).valid) throw new AppError(401, 'Authenticator code is invalid', 'INVALID_TWO_FACTOR_CODE');
+    }
+    const session = await createSession({ id: data.id, email: data.email, username: data.username }, meta);
     return { user: mapUser(data, true), ...session };
   },
 
@@ -144,6 +157,7 @@ export const authService = {
         if (stored) {
           stored.expires_at = expiresAt.toISOString();
           stored.revoked_at = null;
+          stored.last_used_at = now;
         }
       });
       return { accessToken: signAccessToken(user), refreshToken, expiresAt };
@@ -154,7 +168,7 @@ export const authService = {
     const storedUser = data.users as unknown as { id: string; email: string; username: string; email_verified: boolean };
     if (env.REQUIRE_EMAIL_VERIFICATION && !storedUser.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
     const expiresAt = new Date(Date.now() + env.REFRESH_TOKEN_DAYS * 86_400_000);
-    const { error } = await db.from('refresh_tokens').update({ expires_at: expiresAt.toISOString(), revoked_at: null }).eq('id', data.id);
+    const { error } = await db.from('refresh_tokens').update({ expires_at: expiresAt.toISOString(), revoked_at: null, last_used_at: now }).eq('id', data.id);
     if (error) throw new AppError(503, 'Could not renew session', 'SESSION_RENEW_FAILED');
     return { accessToken: signAccessToken(storedUser), refreshToken, expiresAt };
   },
@@ -202,5 +216,67 @@ export const authService = {
     const { data } = await db.from('users').select('id,email,username,email_verified').eq('email', email).maybeSingle();
     if (!data || data.email_verified) return { emailSent: true, verificationUrl: undefined };
     return createVerification({ id: data.id, email: data.email, username: data.username });
+  },
+
+  async sessions(userId: string) {
+    const rows = isLocalDevelopment
+      ? await localDb.read((state) => state.refreshTokens.filter((item) => item.user_id === userId && !item.revoked_at))
+      : ((await db.from('refresh_tokens').select('id,user_agent,ip_address,last_used_at,created_at,expires_at').eq('user_id', userId).is('revoked_at', null).order('last_used_at', { ascending: false })).data ?? []);
+    return rows.map((item) => ({ id: item.id, userAgent: item.user_agent ?? null, ipAddress: item.ip_address ?? null, lastUsedAt: item.last_used_at ?? item.created_at, createdAt: item.created_at, expiresAt: item.expires_at }));
+  },
+
+  async revokeSession(userId: string, sessionId: string) {
+    if (isLocalDevelopment) return localDb.mutate((state) => {
+      const token = state.refreshTokens.find((item) => item.id === sessionId && item.user_id === userId);
+      if (!token) throw new AppError(404, 'Session not found', 'SESSION_NOT_FOUND');
+      token.revoked_at = new Date().toISOString();
+    });
+    const { error, count } = await db.from('refresh_tokens').update({ revoked_at: new Date().toISOString() }, { count: 'exact' }).eq('id', sessionId).eq('user_id', userId);
+    if (error || !count) throw new AppError(404, 'Session not found', 'SESSION_NOT_FOUND');
+  },
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const passwordHash = await bcrypt.hash(newPassword, env.BCRYPT_ROUNDS);
+    if (isLocalDevelopment) return localDb.mutate(async (state) => {
+      const user = state.users.find((item) => item.id === userId);
+      if (!user || !(await bcrypt.compare(currentPassword, user.password_hash))) throw new AppError(401, 'Current password is incorrect', 'INVALID_CURRENT_PASSWORD');
+      user.password_hash = passwordHash;
+    });
+    const { data: user } = await db.from('users').select('password_hash').eq('id', userId).single();
+    if (!user || !(await bcrypt.compare(currentPassword, user.password_hash))) throw new AppError(401, 'Current password is incorrect', 'INVALID_CURRENT_PASSWORD');
+    const { error } = await db.from('users').update({ password_hash: passwordHash }).eq('id', userId);
+    if (error) throw new AppError(500, 'Could not change password', 'PASSWORD_CHANGE_FAILED');
+  },
+
+  async setupTotp(userId: string) {
+    const secret = generateSecret();
+    const email = isLocalDevelopment
+      ? await localDb.mutate((state) => {
+        const user = state.users.find((item) => item.id === userId)!;
+        user.totp_secret = secret;
+        user.totp_enabled = false;
+        return user.email;
+      })
+      : (await db.from('users').update({ totp_secret: secret, totp_enabled: false }).eq('id', userId).select('email').single()).data?.email;
+    if (!email) throw new AppError(404, 'User not found', 'USER_NOT_FOUND');
+    return { secret, uri: generateURI({ issuer: 'NOVA Connect', label: email, secret }) };
+  },
+
+  async enableTotp(userId: string, code: string) {
+    const secret = isLocalDevelopment
+      ? await localDb.read((state) => state.users.find((item) => item.id === userId)?.totp_secret)
+      : (await db.from('users').select('totp_secret').eq('id', userId).single()).data?.totp_secret;
+    if (!secret || !(await verify({ secret, token: code })).valid) throw new AppError(422, 'Authenticator code is invalid', 'INVALID_TWO_FACTOR_CODE');
+    if (isLocalDevelopment) await localDb.mutate((state) => { state.users.find((item) => item.id === userId)!.totp_enabled = true; });
+    else await db.from('users').update({ totp_enabled: true }).eq('id', userId);
+  },
+
+  async disableTotp(userId: string, code: string) {
+    const secret = isLocalDevelopment
+      ? await localDb.read((state) => state.users.find((item) => item.id === userId)?.totp_secret)
+      : (await db.from('users').select('totp_secret').eq('id', userId).single()).data?.totp_secret;
+    if (!secret || !(await verify({ secret, token: code })).valid) throw new AppError(422, 'Authenticator code is invalid', 'INVALID_TWO_FACTOR_CODE');
+    if (isLocalDevelopment) await localDb.mutate((state) => { const user = state.users.find((item) => item.id === userId)!; user.totp_enabled = false; user.totp_secret = null; });
+    else await db.from('users').update({ totp_enabled: false, totp_secret: null }).eq('id', userId);
   },
 };

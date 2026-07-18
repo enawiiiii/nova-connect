@@ -17,11 +17,13 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [resending, setResending] = useState(false);
   const [error, setError] = useState('');
   const [unverified, setUnverified] = useState(false);
+  const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
   const [verification, setVerification] = useState<{ email: string; emailSent: boolean; verificationUrl?: string } | null>(null);
-  const [values, setValues] = useState({ username: '', email: '', password: '' });
+  const [values, setValues] = useState({ username: '', email: '', password: '', totpCode: '' });
   useEffect(() => {
     setVerification(null);
     setUnverified(false);
+    setRequiresTwoFactor(false);
     setError('');
   }, [mode]);
 
@@ -40,7 +42,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           verificationUrl?: string;
         }>('/auth/register', {
           method: 'POST',
-          body: values,
+          body: { username: values.username, email: values.email, password: values.password },
         });
         if (!result.requiresEmailVerification && result.accessToken) {
           setSession(result.user, result.accessToken);
@@ -57,12 +59,13 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
 
       const result = await api<{ user: PublicUser; accessToken: string }>('/auth/login', {
         method: 'POST',
-        body: { email: values.email, password: values.password },
+        body: { email: values.email, password: values.password, ...(requiresTwoFactor ? { totpCode: values.totpCode } : {}) },
       });
       setSession(result.user, result.accessToken);
       navigate('/app/chats');
     } catch (reason) {
       if (reason instanceof ApiError && reason.code === 'EMAIL_NOT_VERIFIED') setUnverified(true);
+      if (reason instanceof ApiError && reason.code === 'TWO_FACTOR_REQUIRED') setRequiresTwoFactor(true);
       setError(reason instanceof ApiError ? reason.message : 'Could not connect to NOVA. Please try again.');
     } finally {
       setLoading(false);
@@ -117,6 +120,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             {mode === 'register' && <label><span>{t('auth.username')}</span><input required minLength={3} maxLength={32} pattern="[A-Za-z0-9_]+" title="استخدم الأحرف الإنجليزية والأرقام والشرطة السفلية فقط" autoComplete="username" value={values.username} onChange={(event) => setValues({ ...values, username: event.target.value })} placeholder="your_nova_name" /></label>}
             <label><span>{t('auth.email')}</span><input required type="email" maxLength={254} autoComplete="email" value={values.email} onChange={(event) => setValues({ ...values, email: event.target.value })} placeholder="you@example.com" /></label>
             <label><span>{t('auth.password')}</span><div className="password-input"><input required minLength={8} maxLength={128} pattern={mode === 'register' ? '(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9]).{8,128}' : undefined} title={mode === 'register' ? 'يجب أن تحتوي كلمة المرور على حرف كبير وحرف صغير ورقم' : undefined} type={visible ? 'text' : 'password'} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={values.password} onChange={(event) => setValues({ ...values, password: event.target.value })} placeholder="••••••••••••" /><button type="button" onClick={() => setVisible((value) => !value)} aria-label="Toggle password visibility">{visible ? <EyeOff /> : <Eye />}</button></div></label>
+            {mode === 'login' && requiresTwoFactor && <label><span>رمز المصادقة الثنائية</span><input required inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} value={values.totpCode} onChange={(event) => setValues({ ...values, totpCode: event.target.value.replace(/\D/g, '').slice(0, 6) })} placeholder="000000" /></label>}
             {mode === 'register' && <small className="password-hint">8+ characters · uppercase · lowercase · number</small>}
             {error && <div className="form-error" role="alert">{error}</div>}
             {unverified && <button className="button verification-resend" type="button" disabled={resending} onClick={() => void resend(values.email)}><RefreshCw />إعادة إرسال رابط التحقق</button>}

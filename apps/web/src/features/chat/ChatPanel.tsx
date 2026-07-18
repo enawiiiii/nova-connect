@@ -4,7 +4,7 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Avatar } from '../../components/Avatar';
-import { ApiError } from '../../lib/api';
+import { api, ApiError } from '../../lib/api';
 import type { Friend } from '../../lib/demo-data';
 import { createId } from '../../lib/platform';
 import { connectSocket, getSocket } from '../../lib/socket';
@@ -28,6 +28,7 @@ export function ChatPanel({ friend }: { friend: Friend }) {
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
   const [messageError, setMessageError] = useState('');
+  const [showOptions, setShowOptions] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -129,12 +130,25 @@ export function ChatPanel({ friend }: { friend: Friend }) {
     setReplying(null);
     setText(message.messageText);
   };
+  const blockFriend = async () => {
+    if (!accessToken || !window.confirm(`حظر ${friend.username}؟ سيتم حذف الصداقة ومنع الرسائل والمكالمات.`)) return;
+    await api('/privacy/block', { method: 'POST', token: accessToken, body: { userId: friend.id } });
+    window.location.assign('/app/friends');
+  };
+  const reportFriend = async () => {
+    if (!accessToken) return;
+    const details = window.prompt('اكتب سبب البلاغ باختصار:');
+    if (details === null) return;
+    await api('/privacy/reports', { method: 'POST', token: accessToken, body: { userId: friend.id, reason: 'other', details } });
+    setMessageError('تم إرسال البلاغ للمراجعة.');
+    setShowOptions(false);
+  };
 
   return (
     <section className="chat-panel">
       <header className="chat-header">
         <div className="chat-person"><Avatar user={friend} size="md" showStatus /><span><strong>{friend.username}</strong><small>{friend.status === 'online' ? t('common.online') : `Last seen ${friend.lastSeen ? new Date(friend.lastSeen).toLocaleDateString() : 'recently'}`}</small>{callError && <small className="chat-call-error">{callError}</small>}</span></div>
-        <div className="chat-actions"><button disabled={startingCall} onClick={() => void beginCall('voice')} aria-label="Start voice call"><Phone /></button><button disabled={startingCall} onClick={() => void beginCall('video')} aria-label="Start video call"><Video /></button><button title="خيارات المحادثة" aria-label="Conversation options"><MoreHorizontal /></button></div>
+        <div className="chat-actions"><button disabled={startingCall} onClick={() => void beginCall('voice')} aria-label="Start voice call"><Phone /></button><button disabled={startingCall} onClick={() => void beginCall('video')} aria-label="Start video call"><Video /></button><button title="خيارات المحادثة" aria-label="Conversation options" onClick={() => setShowOptions((value) => !value)}><MoreHorizontal /></button>{showOptions && <div className="chat-options-menu"><button onClick={() => void reportFriend()}>إبلاغ عن المستخدم</button><button className="danger" onClick={() => void blockFriend()}>حظر المستخدم</button></div>}</div>
       </header>
       <div className="message-area">
         <div className="date-marker"><span>Today</span></div>

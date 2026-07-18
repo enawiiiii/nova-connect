@@ -6,6 +6,7 @@ import { localDb, type LocalCall } from '../database/local.database.js';
 import { AppError } from '../utils/errors.js';
 import { mapCall } from '../utils/mappers.js';
 import { friendService } from './friend.service.js';
+import { privacyService } from './privacy.service.js';
 
 const activeCallStatuses = ['ringing', 'answered'] as const;
 let callStartQueue = Promise.resolve();
@@ -184,6 +185,9 @@ export const callService = {
   },
   async start(callerId: string, receiverId: string | null, callType: CallType, roomId: string, participantIds: string[] = []) {
     const participants = [...new Set(participantIds)].filter((id) => id !== callerId);
+    for (const targetId of [...participants, ...(receiverId ? [receiverId] : [])]) {
+      if (await privacyService.isBlocked(callerId, targetId)) throw new AppError(403, 'Calling this user is not allowed', 'USER_BLOCKED');
+    }
     if (callType === 'group' && (receiverId || participants.length === 0)) throw new AppError(400, 'A group call needs at least one selected friend', 'INVALID_GROUP_CALL');
     if (callType !== 'group' && (!receiverId || participants.length > 0)) throw new AppError(400, 'An individual call needs one receiver', 'INVALID_INDIVIDUAL_CALL');
     const targets = callType === 'group' ? participants : [receiverId!];
