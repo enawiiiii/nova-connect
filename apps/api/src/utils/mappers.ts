@@ -16,7 +16,25 @@ export const mapMessage = (row: Row): Message => ({
   id: String(row.id),
   senderId: String(row.sender_id),
   receiverId: String(row.receiver_id),
-  messageText: String(row.message_text),
+  messageText: row.deleted_at ? '' : String(row.message_text ?? ''),
+  messageType: (row.message_type ?? 'text') as Message['messageType'],
+  attachmentUrl: row.deleted_at || !row.attachment_url ? null : String(row.attachment_url),
+  attachmentName: row.deleted_at || !row.attachment_name ? null : String(row.attachment_name),
+  replyToId: row.reply_to_id ? String(row.reply_to_id) : null,
+  editedAt: row.edited_at ? String(row.edited_at) : null,
+  deletedAt: row.deleted_at ? String(row.deleted_at) : null,
+  reactions: (() => {
+    const source = Array.isArray(row.message_reactions) ? row.message_reactions : Array.isArray(row.reactions) ? row.reactions : [];
+    const grouped = new Map<string, string[]>();
+    source.forEach((reaction) => {
+      if (!reaction || typeof reaction !== 'object') return;
+      const item = reaction as Record<string, unknown>;
+      const emoji = String(item.emoji ?? '');
+      const userId = String(item.user_id ?? '');
+      if (emoji && userId) grouped.set(emoji, [...(grouped.get(emoji) ?? []), userId]);
+    });
+    return [...grouped].map(([emoji, userIds]) => ({ emoji, userIds }));
+  })(),
   status: row.status as Message['status'],
   createdAt: String(row.created_at),
 });

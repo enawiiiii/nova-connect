@@ -21,7 +21,11 @@ interface NovaState {
   loaded: boolean;
   load: () => Promise<void>;
   openConversation: (userId: string) => Promise<void>;
-  sendMessage: (receiverId: string, text: string) => Promise<void>;
+  sendMessage: (receiverId: string, text: string, replyToId?: string | null) => Promise<void>;
+  sendAttachment: (receiverId: string, file: File, caption?: string, replyToId?: string | null) => Promise<void>;
+  editMessage: (messageId: string, text: string) => Promise<void>;
+  deleteMessage: (messageId: string) => Promise<void>;
+  reactToMessage: (messageId: string, emoji: string) => Promise<void>;
   respondRequest: (id: string, action: 'accept' | 'reject') => Promise<void>;
   searchUsers: (query: string) => Promise<PublicUser[]>;
   sendRequest: (receiverId: string) => Promise<void>;
@@ -88,8 +92,13 @@ export const useNovaStore = create<NovaState>((set, get) => ({
       const otherId = message.senderId === me ? message.receiverId : message.senderId;
       const isOpenIncoming = message.senderId !== me && window.location.pathname.endsWith(`/chats/${message.senderId}`);
       const localMessage = isOpenIncoming ? { ...message, status: 'seen' as const } : message;
-      set((state) => ({ messages: { ...state.messages, [otherId]: [...(state.messages[otherId] ?? []), localMessage] } }));
+      set((state) => ({ messages: { ...state.messages, [otherId]: [...(state.messages[otherId] ?? []).filter((item) => item.id !== localMessage.id), localMessage] } }));
       if (isOpenIncoming) socket.emit('message:seen', { senderId: message.senderId });
+    });
+    socket.off('message:updated').on('message:updated', (message: Message) => {
+      const me = useAuthStore.getState().user?.id;
+      const otherId = message.senderId === me ? message.receiverId : message.senderId;
+      set((state) => ({ messages: { ...state.messages, [otherId]: (state.messages[otherId] ?? []).map((item) => item.id === message.id ? message : item) } }));
     });
     socket.off('message:seen').on('message:seen', ({ messageIds }: { messageIds: string[] }) => set((state) => ({ messages: Object.fromEntries(Object.entries(state.messages).map(([id, items]) => [id, items.map((message) => messageIds.includes(message.id) ? { ...message, status: 'seen' as const } : message)])) })));
     socket.off('typing:update').on('typing:update', ({ userId, typing }: { userId: string; typing: boolean }) => set((state) => ({ typing: { ...state.typing, [userId]: typing } })));
@@ -150,17 +159,42 @@ export const useNovaStore = create<NovaState>((set, get) => ({
     set((state) => ({ messages: { ...state.messages, [userId]: messages } }));
     connectSocket(accessToken).emit('message:seen', { senderId: userId });
   },
-  sendMessage: async (receiverId, text) => {
+  sendMessage: async (receiverId, text, replyToId = null) => {
     const { demo, user, accessToken } = useAuthStore.getState();
     if (!user) return;
     if (demo) {
-      const message: Message = { id: createId(), senderId: user.id, receiverId, messageText: text, status: 'sent', createdAt: new Date().toISOString() };
+      const message: Message = { id: createId(), senderId: user.id, receiverId, messageText: text, replyToId, messageType: 'text', reactions: [], status: 'sent', createdAt: new Date().toISOString() };
       set((state) => ({ messages: { ...state.messages, [receiverId]: [...(state.messages[receiverId] ?? []), message] } }));
       return;
     }
     if (!accessToken) throw new Error('Your session is not ready. Please try again.');
-    const response = await connectSocket(accessToken).timeout(10_000).emitWithAck('message:send', { receiverId, text }) as { data?: Message; error?: string };
+    const response = await connectSocket(accessToken).timeout(10_000).emitWithAck('message:send', { receiverId, text, replyToId }) as { data?: Message; error?: string };
     if (response.error) throw new Error(response.error);
+  },
+  sendAttachment: async (receiverId, file, caption = '', replyToId = null) => {
+    const { demo, accessToken } = useAuthStore.getState();
+    if (demo) throw new Error('المرفقات غير متاحة في الوضع التجريبي.');
+    if (!accessToken) throw new Error('Your session is not ready. Please try again.');
+    const form = new FormData();
+    form.append('file', file);
+    if (caption) form.append('caption', caption);
+    if (replyToId) form.append('replyToId', replyToId);
+    await api<Message>(`/messages/${receiverId}/attachments`, { method: 'POST', token: accessToken, body: form });
+  },
+  editMessage: async (messageId, text) => {
+    const { accessToken } = useAuthStore.getState();
+    if (!accessToken) return;
+    await api<Message>(`/messages/${messageId}`, { method: 'PATCH', token: accessToken, body: { text } });
+  },
+  deleteMessage: async (messageId) => {
+    const { accessToken } = useAuthStore.getState();
+    if (!accessToken) return;
+    await api<Message>(`/messages/${messageId}`, { method: 'DELETE', token: accessToken });
+  },
+  reactToMessage: async (messageId, emoji) => {
+    const { accessToken } = useAuthStore.getState();
+    if (!accessToken) return;
+    await api<Message>(`/messages/${messageId}/reactions`, { method: 'POST', token: accessToken, body: { emoji } });
   },
   respondRequest: async (id, action) => {
     const { demo, accessToken } = useAuthStore.getState();

@@ -28,6 +28,13 @@ export interface LocalMessage {
   sender_id: string;
   receiver_id: string;
   message_text: string;
+  message_type?: 'text' | 'image' | 'audio' | 'file';
+  attachment_url?: string | null;
+  attachment_name?: string | null;
+  reply_to_id?: string | null;
+  edited_at?: string | null;
+  deleted_at?: string | null;
+  reactions?: Array<{ user_id: string; emoji: string }>;
   status: 'sent' | 'delivered' | 'seen';
   created_at: string;
 }

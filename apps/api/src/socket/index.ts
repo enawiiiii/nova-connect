@@ -13,7 +13,7 @@ import { userService } from '../services/user.service.js';
 type Ack<T = unknown> = (response: { data?: T; error?: string }) => void;
 const activeConnections = new Map<string, number>();
 const idSchema = z.string().uuid();
-const messageSchema = z.object({ receiverId: idSchema, text: z.string().trim().min(1).max(4000) }).strict();
+const messageSchema = z.object({ receiverId: idSchema, text: z.string().trim().min(1).max(4000), replyToId: idSchema.nullable().optional() }).strict();
 const userTargetSchema = z.object({ receiverId: idSchema }).strict();
 const seenSchema = z.object({ senderId: idSchema }).strict();
 const callInviteSchema = z.object({ receiverId: idSchema, roomId: idSchema, type: z.enum(['voice', 'video']) }).strict();
@@ -104,7 +104,7 @@ export function createSocketServer(httpServer: HttpServer) {
       try {
         if (!allowEvent('message:send', 30, 10_000)) throw new Error('Too many messages. Please slow down.');
         const parsed = messageSchema.parse(payload);
-        const message = await messageService.send(user.id, parsed.receiverId, parsed.text);
+        const message = await messageService.send(user.id, parsed.receiverId, parsed.text, parsed.replyToId);
         io.to(`user:${parsed.receiverId}`).emit('message:new', message);
         socket.emit('message:new', message);
         ack?.({ data: message });

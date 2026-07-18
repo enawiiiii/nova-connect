@@ -19,6 +19,13 @@ export interface Message {
   senderId: string;
   receiverId: string;
   messageText: string;
+  messageType?: 'text' | 'image' | 'audio' | 'file';
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
+  replyToId?: string | null;
+  editedAt?: string | null;
+  deletedAt?: string | null;
+  reactions?: Array<{ emoji: string; userIds: string[] }>;
   status: MessageStatus;
   createdAt: string;
 }
@@ -54,4 +61,3 @@ export interface PaginatedResponse<T> {
   limit: number;
   total: number;
 }
-
