@@ -16,7 +16,7 @@ export function notFound(req: Request, _res: Response, next: NextFunction) {
   next(new AppError(404, `Route ${req.method} ${req.path} was not found`, 'NOT_FOUND'));
 }
 
-export function errorHandler(error: unknown, _req: Request, res: Response, _next: NextFunction) {
+export function errorHandler(error: unknown, req: Request, res: Response, _next: NextFunction) {
   void _next;
   if (error && typeof error === 'object' && 'type' in error && error.type === 'entity.parse.failed') {
     return res.status(400).json({ error: { code: 'INVALID_JSON', message: 'Request body contains invalid JSON' } });
@@ -37,5 +37,13 @@ export function errorHandler(error: unknown, _req: Request, res: Response, _next
     return res.status(error.statusCode).json({ error: { code: error.code, message: error.message } });
   }
   console.error(error);
+  void import('../services/monitoring.service.js').then(({ monitoringService }) => monitoringService.record({
+    userId: req.user?.id ?? null,
+    source: 'api',
+    message: error instanceof Error ? error.message : 'Unknown server error',
+    details: error instanceof Error ? { name: error.name, stack: error.stack?.slice(0, 4000) } : null,
+    path: req.originalUrl,
+    userAgent: req.get('user-agent'),
+  })).catch(() => undefined);
   return res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'Something went wrong' } });
 }

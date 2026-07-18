@@ -8,6 +8,8 @@ import notificationRoutes from './notification.routes.js';
 import pushRoutes from './push.routes.js';
 import groupRoutes from './group.routes.js';
 import privacyRoutes from './privacy.routes.js';
+import adminRoutes from './admin.routes.js';
+import monitoringRoutes from './monitoring.routes.js';
 
 export const apiRouter = Router();
 apiRouter.use('/auth', authRoutes);
@@ -19,3 +21,5 @@ apiRouter.use('/notifications', notificationRoutes);
 apiRouter.use('/push', pushRoutes);
 apiRouter.use('/groups', groupRoutes);
 apiRouter.use('/privacy', privacyRoutes);
+apiRouter.use('/admin', adminRoutes);
+apiRouter.use('/monitoring', monitoringRoutes);

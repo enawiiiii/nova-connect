@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { reportClientError } from '../lib/monitoring';
 
 interface Props { children: ReactNode }
 interface State { failed: boolean }
@@ -10,6 +11,7 @@ export class AppErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('NOVA interface error', error, info.componentStack);
+    reportClientError(error, { kind: 'react-boundary', componentStack: info.componentStack?.slice(0, 4000) });
   }
 
   render() {

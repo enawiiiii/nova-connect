@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AuthPage } from './pages/AuthPage';
+import { AdminPage } from './pages/AdminPage';
 import { CallPage } from './pages/CallPage';
 import { CallsPage } from './pages/CallsPage';
 import { ChatsPage } from './pages/ChatsPage';
@@ -40,6 +41,7 @@ export default function App() {
           <Route path="calls" element={<CallsPage />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="admin" element={<AdminPage />} />
         </Route>
         <Route path="/app/call/:type/:roomId" element={<CallPage />} />
       </Route>

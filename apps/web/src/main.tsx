@@ -7,12 +7,14 @@ import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { primeCallAudio } from './lib/call-sounds';
 import './lib/i18n';
 import { safeStorage } from './lib/platform';
+import { installGlobalErrorMonitoring } from './lib/monitoring';
 import './styles.css';
 import './styles-app.css';
 import './styles-more.css';
 
 document.documentElement.dataset.theme = safeStorage.get('nova-theme') === 'light' ? 'light' : 'dark';
 primeCallAudio();
+installGlobalErrorMonitoring();
 if (import.meta.env.DEV) {
   void navigator.serviceWorker?.getRegistrations().then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())));
 } else {
