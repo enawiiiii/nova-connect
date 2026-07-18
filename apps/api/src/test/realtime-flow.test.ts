@@ -184,6 +184,9 @@ describe('authenticated realtime flow', () => {
     });
     expect(suspended.status).toBe(200);
     expect(suspended.body.data.accountModeration.suspendedUntil).toBeTruthy();
+    const blockedActiveSession = await second.agent.get('/api/v1/notifications').set(auth(second.accessToken));
+    expect(blockedActiveSession.status).toBe(403);
+    expect(blockedActiveSession.body.error.code).toBe('ACCOUNT_SUSPENDED');
     const blockedLogin = await second.agent.post('/api/v1/auth/login').send({ email: second.email, password: 'StrongPass123' });
     expect(blockedLogin.status).toBe(403);
     expect(blockedLogin.body.error.code).toBe('ACCOUNT_SUSPENDED');

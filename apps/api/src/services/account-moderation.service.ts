@@ -7,6 +7,8 @@ interface ModerationState {
   suspendedUntil: string | null;
 }
 
+const stateCache = new Map<string, { value: ModerationState; expiresAt: number }>();
+
 function stateFromEvents(events: Array<{ details: Record<string, unknown> | null; created_at: string }>): ModerationState {
   const latest = events
     .filter((event) => ['suspend_24h', 'suspend_7d', 'restore_account'].includes(String(event.details?.action ?? '')))
@@ -18,22 +20,29 @@ function stateFromEvents(events: Array<{ details: Record<string, unknown> | null
 
 export const accountModerationService = {
   async state(userId: string): Promise<ModerationState> {
+    const cached = stateCache.get(userId);
+    if (cached && cached.expiresAt > Date.now()) return cached.value;
+    let value: ModerationState;
     if (isLocalDevelopment) {
       const events = await localDb.read((state) => state.appEvents.filter((event) => (
         event.source === 'report-moderation' && event.details?.targetUserId === userId
       )));
-      return stateFromEvents(events);
+      value = stateFromEvents(events);
+    } else {
+      const { data, error } = await db
+        .from('app_events')
+        .select('details,created_at')
+        .eq('source', 'report-moderation')
+        .eq('details->>targetUserId', userId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      value = error ? { suspendedUntil: null } : stateFromEvents((data ?? []) as Array<{ details: Record<string, unknown> | null; created_at: string }>);
     }
-    const { data, error } = await db
-      .from('app_events')
-      .select('details,created_at')
-      .eq('source', 'report-moderation')
-      .eq('details->>targetUserId', userId)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    if (error) return { suspendedUntil: null };
-    return stateFromEvents((data ?? []) as Array<{ details: Record<string, unknown> | null; created_at: string }>);
+    stateCache.set(userId, { value, expiresAt: Date.now() + 30_000 });
+    return value;
   },
+
+  invalidate(userId: string) { stateCache.delete(userId); },
 
   async assertCanAuthenticate(userId: string) {
     const state = await this.state(userId);

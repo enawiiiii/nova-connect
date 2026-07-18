@@ -9,6 +9,7 @@ import { notificationService } from '../services/notification.service.js';
 import { pushService } from '../services/push.service.js';
 import { verifyAccessToken, type TokenUser } from '../services/token.service.js';
 import { userService } from '../services/user.service.js';
+import { accountModerationService } from '../services/account-moderation.service.js';
 
 type Ack<T = unknown> = (response: { data?: T; error?: string }) => void;
 const activeConnections = new Map<string, number>();
@@ -48,11 +49,12 @@ export function createSocketServer(httpServer: HttpServer) {
     pingTimeout: 20_000,
   });
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     try {
       const token = socket.handshake.auth.token;
       if (typeof token !== 'string') throw new Error('Missing token');
       socket.data.user = verifyAccessToken(token);
+      await accountModerationService.assertCanAuthenticate((socket.data.user as TokenUser).id);
       next();
     } catch {
       next(new Error('Authentication failed'));

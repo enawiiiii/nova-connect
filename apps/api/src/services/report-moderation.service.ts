@@ -208,6 +208,7 @@ export const reportModerationService = {
         suspendedUntil,
       },
     });
+    accountModerationService.invalidate(before.reported_id);
     return this.detail(id);
   },
 };
