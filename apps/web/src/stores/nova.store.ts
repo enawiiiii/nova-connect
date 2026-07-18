@@ -1,4 +1,4 @@
-import type { AppNotification, CallRecord, Message, PublicUser } from '@nova/shared';
+import type { AppNotification, CallRecord, Group, GroupMessage, Message, PublicUser } from '@nova/shared';
 import { create } from 'zustand';
 import { api } from '../lib/api';
 import { playHangupTone, stopAllCallLoops, stopIncomingRingtone } from '../lib/call-sounds';
@@ -18,6 +18,8 @@ interface NovaState {
   activeCallId: string | null;
   activeCallStartedAt: number | null;
   incomingCall: { caller: PublicUser; roomId: string; type: 'voice' | 'video'; group: boolean } | null;
+  groups: Group[];
+  groupMessages: Record<string, GroupMessage[]>;
   loaded: boolean;
   load: () => Promise<void>;
   openConversation: (userId: string) => Promise<void>;
@@ -26,6 +28,9 @@ interface NovaState {
   editMessage: (messageId: string, text: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
   reactToMessage: (messageId: string, emoji: string) => Promise<void>;
+  createGroup: (name: string, memberIds: string[]) => Promise<Group>;
+  openGroup: (groupId: string) => Promise<void>;
+  sendGroupMessage: (groupId: string, text: string) => Promise<void>;
   respondRequest: (id: string, action: 'accept' | 'reject') => Promise<void>;
   searchUsers: (query: string) => Promise<PublicUser[]>;
   sendRequest: (receiverId: string) => Promise<void>;
@@ -37,7 +42,7 @@ interface NovaState {
   reset: () => void;
 }
 
-const initial = { friends: [], requests: [], messages: {}, calls: [], notifications: [], typing: {}, loaded: false, activeCallId: null, activeCallStartedAt: null, incomingCall: null };
+const initial = { friends: [], requests: [], messages: {}, calls: [], notifications: [], typing: {}, groups: [], groupMessages: {}, loaded: false, activeCallId: null, activeCallStartedAt: null, incomingCall: null };
 let novaLoadPromise: Promise<void> | null = null;
 let novaGeneration = 0;
 
@@ -54,11 +59,11 @@ export const useNovaStore = create<NovaState>((set, get) => ({
       return;
     }
     if (!accessToken) return;
-    const [friends, requests, calls, notifications] = await Promise.all([
-      api<Friend[]>('/friends', { token: accessToken }), api<FriendRequest[]>('/friends/requests', { token: accessToken }), api<CallRecord[]>('/calls', { token: accessToken }), api<AppNotification[]>('/notifications', { token: accessToken }),
+    const [friends, requests, calls, notifications, groups] = await Promise.all([
+      api<Friend[]>('/friends', { token: accessToken }), api<FriendRequest[]>('/friends/requests', { token: accessToken }), api<CallRecord[]>('/calls', { token: accessToken }), api<AppNotification[]>('/notifications', { token: accessToken }), api<Group[]>('/groups', { token: accessToken }),
     ]);
     if (generation !== novaGeneration) return;
-    set({ friends, requests, calls, notifications, loaded: true });
+    set({ friends, requests, calls, notifications, groups, loaded: true });
     const socket = connectSocket(accessToken);
     const syncCalls = async () => {
       const currentToken = useAuthStore.getState().accessToken;
@@ -99,6 +104,9 @@ export const useNovaStore = create<NovaState>((set, get) => ({
       const me = useAuthStore.getState().user?.id;
       const otherId = message.senderId === me ? message.receiverId : message.senderId;
       set((state) => ({ messages: { ...state.messages, [otherId]: (state.messages[otherId] ?? []).map((item) => item.id === message.id ? message : item) } }));
+    });
+    socket.off('group:message').on('group:message', (message: GroupMessage) => {
+      set((state) => ({ groupMessages: { ...state.groupMessages, [message.groupId]: [...(state.groupMessages[message.groupId] ?? []).filter((item) => item.id !== message.id), message] } }));
     });
     socket.off('message:seen').on('message:seen', ({ messageIds }: { messageIds: string[] }) => set((state) => ({ messages: Object.fromEntries(Object.entries(state.messages).map(([id, items]) => [id, items.map((message) => messageIds.includes(message.id) ? { ...message, status: 'seen' as const } : message)])) })));
     socket.off('typing:update').on('typing:update', ({ userId, typing }: { userId: string; typing: boolean }) => set((state) => ({ typing: { ...state.typing, [userId]: typing } })));
@@ -195,6 +203,25 @@ export const useNovaStore = create<NovaState>((set, get) => ({
     const { accessToken } = useAuthStore.getState();
     if (!accessToken) return;
     await api<Message>(`/messages/${messageId}/reactions`, { method: 'POST', token: accessToken, body: { emoji } });
+  },
+  createGroup: async (name, memberIds) => {
+    const { accessToken } = useAuthStore.getState();
+    if (!accessToken) throw new Error('Your session is not ready. Please try again.');
+    const group = await api<Group>('/groups', { method: 'POST', token: accessToken, body: { name, memberIds } });
+    set((state) => ({ groups: [group, ...state.groups] }));
+    return group;
+  },
+  openGroup: async (groupId) => {
+    if (get().groupMessages[groupId]) return;
+    const { accessToken } = useAuthStore.getState();
+    if (!accessToken) return;
+    const items = await api<GroupMessage[]>(`/groups/${groupId}/messages`, { token: accessToken });
+    set((state) => ({ groupMessages: { ...state.groupMessages, [groupId]: items } }));
+  },
+  sendGroupMessage: async (groupId, text) => {
+    const { accessToken } = useAuthStore.getState();
+    if (!accessToken) return;
+    await api<GroupMessage>(`/groups/${groupId}/messages`, { method: 'POST', token: accessToken, body: { text } });
   },
   respondRequest: async (id, action) => {
     const { demo, accessToken } = useAuthStore.getState();

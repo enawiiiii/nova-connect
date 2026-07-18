@@ -55,6 +55,24 @@ export interface ApiResponse<T> {
   message?: string;
 }
 
+export interface Group {
+  id: string;
+  name: string;
+  avatar: string | null;
+  ownerId: string;
+  role: 'owner' | 'admin' | 'member';
+  members: PublicUser[];
+  createdAt: string;
+}
+
+export interface GroupMessage {
+  id: string;
+  groupId: string;
+  senderId: string;
+  messageText: string;
+  createdAt: string;
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   page: number;

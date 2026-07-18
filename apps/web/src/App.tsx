@@ -35,6 +35,7 @@ export default function App() {
           <Route index element={<Navigate to="chats" replace />} />
           <Route path="chats" element={<ChatsPage />} />
           <Route path="chats/:userId" element={<ChatsPage />} />
+          <Route path="groups/:groupId" element={<ChatsPage />} />
           <Route path="friends" element={<FriendsPage />} />
           <Route path="calls" element={<CallsPage />} />
           <Route path="profile" element={<ProfilePage />} />

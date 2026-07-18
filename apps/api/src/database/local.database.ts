@@ -80,6 +80,29 @@ export interface LocalPushSubscription {
   updated_at: string;
 }
 
+export interface LocalGroup {
+  id: string;
+  owner_id: string;
+  name: string;
+  avatar: string | null;
+  created_at: string;
+}
+
+export interface LocalGroupMember {
+  group_id: string;
+  user_id: string;
+  role: 'owner' | 'admin' | 'member';
+  joined_at: string;
+}
+
+export interface LocalGroupMessage {
+  id: string;
+  group_id: string;
+  sender_id: string;
+  message_text: string;
+  created_at: string;
+}
+
 export interface LocalState {
   users: LocalUser[];
   friends: LocalFriend[];
@@ -89,10 +112,13 @@ export interface LocalState {
   refreshTokens: LocalToken[];
   verificationTokens: LocalToken[];
   pushSubscriptions: LocalPushSubscription[];
+  groups: LocalGroup[];
+  groupMembers: LocalGroupMember[];
+  groupMessages: LocalGroupMessage[];
 }
 
 const emptyState = (): LocalState => ({
-  users: [], friends: [], messages: [], calls: [], notifications: [], refreshTokens: [], verificationTokens: [], pushSubscriptions: [],
+  users: [], friends: [], messages: [], calls: [], notifications: [], refreshTokens: [], verificationTokens: [], pushSubscriptions: [], groups: [], groupMembers: [], groupMessages: [],
 });
 
 const dataPath = path.resolve(env.LOCAL_DATA_PATH);
@@ -105,6 +131,9 @@ async function load() {
   try {
     state = JSON.parse(await readFile(dataPath, 'utf8')) as LocalState;
     state.pushSubscriptions ??= [];
+    state.groups ??= [];
+    state.groupMembers ??= [];
+    state.groupMessages ??= [];
   } catch (error) {
     const code = error instanceof Error && 'code' in error ? String(error.code) : '';
     if (code !== 'ENOENT') throw error;
