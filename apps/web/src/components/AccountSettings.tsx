@@ -68,7 +68,7 @@ export function AccountSettings() {
   };
 
   const deleteAccount = async () => {
-    if (!accessToken || !password || !window.confirm('سيتم حذف الحساب والرسائل والاتصالات نهائياً. هل أنت متأكد؟')) return;
+    if (!accessToken || !password) return;
     try {
       await api('/users/me', { method: 'DELETE', token: accessToken, body: { password } });
       reset();

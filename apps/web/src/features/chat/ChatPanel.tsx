@@ -1,6 +1,7 @@
 import type { Message } from '@nova/shared';
-import { CheckCheck, FileText, Mic, MoreHorizontal, Paperclip, Pencil, Phone, Reply, Send, Smile, Square, Trash2, Video } from 'lucide-react';
+import { Ban, CheckCheck, FileText, Mic, MoreHorizontal, Paperclip, Pencil, Phone, Reply, Send, ShieldAlert, Smile, Square, Trash2, Video, X } from 'lucide-react';
 import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Avatar } from '../../components/Avatar';
@@ -30,6 +31,11 @@ export function ChatPanel({ friend }: { friend: Friend }) {
   const [messageError, setMessageError] = useState('');
   const [messageNotice, setMessageNotice] = useState('');
   const [showOptions, setShowOptions] = useState(false);
+  const [moderationMode, setModerationMode] = useState<'report' | 'block' | null>(null);
+  const [reportReason, setReportReason] = useState<'spam' | 'harassment' | 'impersonation' | 'unsafe' | 'other'>('harassment');
+  const [reportDetails, setReportDetails] = useState('');
+  const [moderationBusy, setModerationBusy] = useState(false);
+  const [moderationError, setModerationError] = useState('');
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -44,6 +50,17 @@ export function ChatPanel({ friend }: { friend: Friend }) {
   }, [friend.id, openConversation]);
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [items.length, typing, friend.id]);
   useEffect(() => () => recordingStreamRef.current?.getTracks().forEach((track) => track.stop()), []);
+  useEffect(() => {
+    if (!moderationMode) return;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape' && !moderationBusy) setModerationMode(null); };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [moderationBusy, moderationMode]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -131,23 +148,44 @@ export function ChatPanel({ friend }: { friend: Friend }) {
     setReplying(null);
     setText(message.messageText);
   };
-  const blockFriend = async () => {
-    if (!accessToken || !window.confirm(`حظر ${friend.username}؟ سيتم حذف الصداقة ومنع الرسائل والمكالمات.`)) return;
-    await api('/privacy/block', { method: 'POST', token: accessToken, body: { userId: friend.id } });
-    window.location.assign('/app/friends');
+  const openModeration = (mode: 'report' | 'block') => {
+    setShowOptions(false);
+    setModerationError('');
+    setReportDetails('');
+    setReportReason('harassment');
+    setModerationMode(mode);
   };
-  const reportFriend = async () => {
+  const blockFriend = async () => {
     if (!accessToken) return;
-    const details = window.prompt('اكتب سبب البلاغ باختصار:');
-    if (details === null) return;
+    setModerationBusy(true);
+    setModerationError('');
+    try {
+      await api('/privacy/block', { method: 'POST', token: accessToken, body: { userId: friend.id } });
+      useNovaStore.setState((state) => ({ friends: state.friends.filter((item) => item.id !== friend.id) }));
+      setModerationMode(null);
+      navigate('/app/friends', { replace: true });
+    } catch (error) {
+      setModerationError(error instanceof Error ? error.message : 'تعذر حظر المستخدم.');
+    } finally {
+      setModerationBusy(false);
+    }
+  };
+  const reportFriend = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!accessToken || reportDetails.trim().length < 3) return;
     setMessageError('');
     setMessageNotice('');
+    setModerationError('');
+    setModerationBusy(true);
     try {
-      await api('/privacy/reports', { method: 'POST', token: accessToken, body: { userId: friend.id, reason: 'other', details } });
+      await api('/privacy/reports', { method: 'POST', token: accessToken, body: { userId: friend.id, reason: reportReason, details: reportDetails.trim() } });
       setMessageNotice('تم تسجيل البلاغ وسيظهر في لوحة الإدارة خلال 10 ثوانٍ.');
-      setShowOptions(false);
+      setModerationMode(null);
+      setReportDetails('');
     } catch (error) {
-      setMessageError(error instanceof Error ? error.message : 'تعذر إرسال البلاغ.');
+      setModerationError(error instanceof Error ? error.message : 'تعذر إرسال البلاغ.');
+    } finally {
+      setModerationBusy(false);
     }
   };
 
@@ -155,7 +193,7 @@ export function ChatPanel({ friend }: { friend: Friend }) {
     <section className="chat-panel">
       <header className="chat-header">
         <div className="chat-person"><Avatar user={friend} size="md" showStatus /><span><strong>{friend.username}</strong><small>{friend.status === 'online' ? t('common.online') : `Last seen ${friend.lastSeen ? new Date(friend.lastSeen).toLocaleDateString() : 'recently'}`}</small>{callError && <small className="chat-call-error">{callError}</small>}</span></div>
-        <div className="chat-actions"><button disabled={startingCall} onClick={() => void beginCall('voice')} aria-label="Start voice call"><Phone /></button><button disabled={startingCall} onClick={() => void beginCall('video')} aria-label="Start video call"><Video /></button><button title="خيارات المحادثة" aria-label="Conversation options" onClick={() => setShowOptions((value) => !value)}><MoreHorizontal /></button>{showOptions && <div className="chat-options-menu"><button onClick={() => void reportFriend()}>إبلاغ عن المستخدم</button><button className="danger" onClick={() => void blockFriend()}>حظر المستخدم</button></div>}</div>
+        <div className="chat-actions"><button disabled={startingCall} onClick={() => void beginCall('voice')} aria-label="Start voice call"><Phone /></button><button disabled={startingCall} onClick={() => void beginCall('video')} aria-label="Start video call"><Video /></button><button title="خيارات المحادثة" aria-label="Conversation options" onClick={() => setShowOptions((value) => !value)}><MoreHorizontal /></button>{showOptions && <div className="chat-options-menu"><button onClick={() => openModeration('report')}>إبلاغ عن المستخدم</button><button className="danger" onClick={() => openModeration('block')}>حظر المستخدم</button></div>}</div>
       </header>
       <div className="message-area">
         <div className="date-marker"><span>Today</span></div>
@@ -196,6 +234,27 @@ export function ChatPanel({ friend }: { friend: Friend }) {
         <button type="button" className={recording ? 'recording' : ''} disabled={sending} onClick={() => void toggleRecording()} title={recording ? 'إيقاف التسجيل' : 'رسالة صوتية'}>{recording ? <Square /> : <Mic />}</button>
         <button className="send-button" disabled={sending || !text.trim()} aria-label="Send message"><Send /></button>
       </form>
+      {moderationMode && createPortal(
+        <div className="moderation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !moderationBusy) setModerationMode(null); }}>
+          {moderationMode === 'report' ? (
+            <form className="moderation-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="report-title" onSubmit={(event) => void reportFriend(event)}>
+              <header><span className="moderation-icon report"><ShieldAlert /></span><div><small>NOVA / SAFETY</small><h2 id="report-title">الإبلاغ عن {friend.username}</h2><p>أرسل التفاصيل لفريق الإدارة. لن يعرف المستخدم من أرسل البلاغ.</p></div><button type="button" className="moderation-close" disabled={moderationBusy} onClick={() => setModerationMode(null)} aria-label="إغلاق"><X /></button></header>
+              <label><span>سبب البلاغ</span><select value={reportReason} onChange={(event) => setReportReason(event.target.value as typeof reportReason)}><option value="harassment">مضايقة أو إساءة</option><option value="spam">رسائل مزعجة أو احتيال</option><option value="impersonation">انتحال شخصية</option><option value="unsafe">سلوك أو محتوى غير آمن</option><option value="other">سبب آخر</option></select></label>
+              <label><span>التفاصيل</span><textarea autoFocus required minLength={3} maxLength={1000} value={reportDetails} onChange={(event) => setReportDetails(event.target.value)} placeholder="اشرح ما حدث بوضوح…" /><small>{reportDetails.length} / 1000</small></label>
+              {moderationError && <div className="moderation-error" role="alert">{moderationError}</div>}
+              <footer><button type="button" className="button button-ghost" disabled={moderationBusy} onClick={() => setModerationMode(null)}>إلغاء</button><button className="button button-primary" disabled={moderationBusy || reportDetails.trim().length < 3}>{moderationBusy ? 'جارٍ الإرسال…' : 'إرسال البلاغ'}</button></footer>
+            </form>
+          ) : (
+            <section className="moderation-dialog glass-panel block-dialog" role="dialog" aria-modal="true" aria-labelledby="block-title">
+              <header><span className="moderation-icon block"><Ban /></span><div><small>NOVA / PRIVACY</small><h2 id="block-title">حظر {friend.username}؟</h2><p>هذا الإجراء يحمي مساحتك ويمكنك إلغاء الحظر لاحقاً من الإعدادات.</p></div><button type="button" className="moderation-close" disabled={moderationBusy} onClick={() => setModerationMode(null)} aria-label="إغلاق"><X /></button></header>
+              <div className="block-effects"><span>سيتم حذف الصداقة الحالية</span><span>ستتوقف الرسائل والمكالمات بينكما</span><span>لن يتم إشعار المستخدم بالحظر</span></div>
+              {moderationError && <div className="moderation-error" role="alert">{moderationError}</div>}
+              <footer><button type="button" className="button button-ghost" disabled={moderationBusy} onClick={() => setModerationMode(null)}>إلغاء</button><button type="button" className="button moderation-danger" disabled={moderationBusy} onClick={() => void blockFriend()}>{moderationBusy ? 'جارٍ الحظر…' : 'حظر المستخدم'}</button></footer>
+            </section>
+          )}
+        </div>,
+        document.body,
+      )}
     </section>
   );
 }
