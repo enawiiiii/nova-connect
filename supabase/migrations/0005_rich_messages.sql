@@ -7,6 +7,7 @@ alter table public.messages
   add column if not exists deleted_at timestamptz;
 
 alter table public.messages drop constraint if exists non_empty_message;
+alter table public.messages drop constraint if exists message_has_content;
 alter table public.messages add constraint message_has_content check (
   deleted_at is not null
   or length(trim(message_text)) > 0
