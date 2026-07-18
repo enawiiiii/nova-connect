@@ -18,6 +18,18 @@ installGlobalErrorMonitoring();
 if (import.meta.env.DEV) {
   void navigator.serviceWorker?.getRegistrations().then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())));
 } else {
-  registerSW({ immediate: true });
+  const updateSW = registerSW({
+    immediate: true,
+    onNeedRefresh: () => { void updateSW(true); },
+    onRegisteredSW: (_url, registration) => {
+      if (!registration) return;
+      const checkForUpdate = () => {
+        if (document.visibilityState === 'visible' && navigator.onLine) void registration.update();
+      };
+      window.setInterval(checkForUpdate, 60_000);
+      document.addEventListener('visibilitychange', checkForUpdate);
+      window.addEventListener('online', checkForUpdate);
+    },
+  });
 }
 createRoot(document.getElementById('root')!).render(<StrictMode><AppErrorBoundary><BrowserRouter><App /></BrowserRouter></AppErrorBoundary></StrictMode>);
