@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 process.env.CLIENT_URL = 'https://nova-connect.onrender.com';
 process.env.BREVO_API_KEY = 'brevo-test-key';
-process.env.MAIL_FROM = 'NOVA Connect <connextnova@gmail.com>';
+process.env.MAIL_FROM = 'NOVA Connect <novaconnect.verify@gmail.com>';
 
 const fetchMock = vi.fn().mockResolvedValue(new Response(
   JSON.stringify({ messageId: '<verification@example.com>' }),
@@ -22,7 +22,7 @@ afterAll(() => {
 
 describe('verification email', () => {
   it('uses the Brevo HTTPS API with the configured sender and verification URL', async () => {
-    await expect(sendVerificationEmail('person@example.com', 'NovaUser', 'verification-token')).resolves.toBe(true);
+    await expect(sendVerificationEmail('person@example.com', 'NovaUser', '483920')).resolves.toBe(true);
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -34,8 +34,10 @@ describe('verification email', () => {
       to: Array<{ email: string; name: string }>;
       htmlContent: string;
     };
-    expect(payload.sender).toEqual({ name: 'NOVA Connect', email: 'connextnova@gmail.com' });
+    expect(payload.sender).toEqual({ name: 'NOVA Connect', email: 'novaconnect.verify@gmail.com' });
     expect(payload.to).toEqual([{ email: 'person@example.com', name: 'NovaUser' }]);
-    expect(payload.htmlContent).toContain('https://nova-connect.onrender.com/verify-email?token=verification-token');
+    expect(payload.htmlContent).toContain('483920');
+    expect(payload.htmlContent).toContain('15 دقيقة');
+    expect(payload.htmlContent).not.toContain('/verify-email?token=');
   });
 });

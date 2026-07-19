@@ -2,6 +2,7 @@ import type { Express } from 'express';
 import request from 'supertest';
 import sharp from 'sharp';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { AppError } from '../utils/errors.js';
 
 process.env.LOCAL_DEVELOPMENT_MODE = 'true';
 process.env.LOCAL_DATA_PATH = `.local/vitest-${process.pid}.json`;
@@ -22,8 +23,7 @@ describe('local account flow', () => {
     });
     expect(registration.status).toBe(201);
     expect(registration.body.data.requiresEmailVerification).toBe(true);
-    expect(registration.body.data.verificationUrl).toBeTypeOf('string');
-    expect(registration.body.data.verificationUrl).toMatch(/^\/verify-email\?token=/);
+    expect(registration.body.data.verificationCode).toMatch(/^\d{6}$/);
 
     const unverifiedLogin = await agent.post('/api/v1/auth/login').send({
       email: `local.${suffix}@example.com`,
@@ -32,12 +32,35 @@ describe('local account flow', () => {
     expect(unverifiedLogin.status).toBe(403);
     expect(unverifiedLogin.body.error.code).toBe('EMAIL_NOT_VERIFIED');
 
-    const verificationToken = new URL(registration.body.data.verificationUrl as string, 'http://localhost:5173').searchParams.get('token');
-    expect(verificationToken).toBeTruthy();
-    const verification = await agent.post('/api/v1/auth/verify-email').send({ token: verificationToken });
+    const invalidCode = registration.body.data.verificationCode === '000000' ? '000001' : '000000';
+    const wrongCode = await agent.post('/api/v1/auth/verify-email').send({
+      email: `local.${suffix}@example.com`,
+      code: invalidCode,
+    });
+    expect(wrongCode.status).toBe(400);
+    expect(wrongCode.body.error.code).toBe('INVALID_VERIFICATION_CODE');
+
+    const resend = await agent.post('/api/v1/auth/resend-verification').send({ email: `local.${suffix}@example.com` });
+    expect(resend.status).toBe(200);
+    expect(resend.body.data.verificationCode).toMatch(/^\d{6}$/);
+    const replacedCode = await agent.post('/api/v1/auth/verify-email').send({
+      email: `local.${suffix}@example.com`,
+      code: registration.body.data.verificationCode,
+    });
+    expect(replacedCode.status).toBe(400);
+
+    const verification = await agent.post('/api/v1/auth/verify-email').send({
+      email: `local.${suffix}@example.com`,
+      code: resend.body.data.verificationCode,
+    });
     expect(verification.status).toBe(200);
-    const repeatedVerification = await agent.post('/api/v1/auth/verify-email').send({ token: verificationToken });
-    expect(repeatedVerification.status).toBe(200);
+    expect(verification.body.data.accessToken).toBeTypeOf('string');
+    expect(verification.headers['set-cookie']?.[0]).toContain('nova_refresh=');
+    const repeatedVerification = await agent.post('/api/v1/auth/verify-email').send({
+      email: `local.${suffix}@example.com`,
+      code: resend.body.data.verificationCode,
+    });
+    expect(repeatedVerification.status).toBe(400);
 
     const login = await agent.post('/api/v1/auth/login').send({
       email: `local.${suffix}@example.com`,
@@ -85,5 +108,29 @@ describe('local account flow', () => {
     const response = await request(app).post('/api/v1/auth/register').send({ username: `Weak_${suffix}`, email: `weak.${suffix}@example.com`, password: 'weakpass' });
     expect(response.status).toBe(422);
     expect(response.body.error.message).toBe('Include an uppercase letter');
+  });
+
+  it('expires verification codes after fifteen minutes', async () => {
+    const email = `expired.${suffix}@example.com`;
+    const registration = await request(app).post('/api/v1/auth/register').send({
+      username: `Expired_${suffix}`,
+      email,
+      password: 'StrongPass123',
+    });
+    expect(registration.status).toBe(201);
+
+    const [{ localDb }, { authService }] = await Promise.all([
+      import('../database/local.database.js'),
+      import('../services/auth.service.js'),
+    ]);
+    await localDb.mutate((state) => {
+      const user = state.users.find((item) => item.email === email)!;
+      const stored = state.verificationTokens.find((item) => item.user_id === user.id)!;
+      stored.expires_at = new Date(Date.now() - 1_000).toISOString();
+    });
+
+    await expect(authService.verifyEmail(email, registration.body.data.verificationCode)).rejects.toMatchObject<Partial<AppError>>({
+      code: 'INVALID_VERIFICATION_CODE',
+    });
   });
 });

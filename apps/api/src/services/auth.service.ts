@@ -7,7 +7,7 @@ import { localDb, type LocalUser } from '../database/local.database.js';
 import { AppError } from '../utils/errors.js';
 import { mapUser } from '../utils/mappers.js';
 import { createOpaqueToken, hashToken, signAccessToken } from './token.service.js';
-import { localVerificationPath, passwordResetUrl, sendPasswordResetEmail, sendVerificationEmail } from './mail.service.js';
+import { passwordResetUrl, sendPasswordResetEmail, sendVerificationEmail } from './mail.service.js';
 import { accountModerationService } from './account-moderation.service.js';
 
 interface Credentials { email: string; password: string; totpCode?: string }
@@ -35,42 +35,69 @@ async function createSession(user: { id: string; email: string; username: string
   return { accessToken: signAccessToken(user), refreshToken, expiresAt };
 }
 
+function createVerificationCode() {
+  return crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+}
+
+function hashVerificationCode(userId: string, code: string) {
+  return crypto.createHmac('sha256', env.JWT_ACCESS_SECRET).update(`${userId}:${code}`).digest('hex');
+}
+
 async function createVerification(user: { id: string; email: string; username: string }) {
-  const token = createOpaqueToken();
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const existingRows = isLocalDevelopment
+    ? await localDb.read((state) => state.verificationTokens.filter((item) => item.user_id === user.id).map((item) => ({ id: item.id, token_hash: item.token_hash })))
+    : ((await db.from('email_verification_tokens').select('id,token_hash').eq('user_id', user.id).order('created_at', { ascending: false })).data ?? []);
+  const previousHashes = existingRows.map((item) => item.token_hash);
+  let code = createVerificationCode();
+  let tokenHash = hashVerificationCode(user.id, code);
+  while (previousHashes.includes(tokenHash)) {
+    code = createVerificationCode();
+    tokenHash = hashVerificationCode(user.id, code);
+  }
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   if (isLocalDevelopment) {
     await localDb.mutate((state) => {
-      state.verificationTokens.forEach((stored) => {
-        if (stored.user_id === user.id && !stored.revoked_at) stored.revoked_at = new Date().toISOString();
-      });
+      state.verificationTokens = state.verificationTokens.filter((stored) => stored.user_id !== user.id);
       state.verificationTokens.push({
         id: crypto.randomUUID(),
         user_id: user.id,
-        token_hash: hashToken(token),
+        token_hash: tokenHash,
         expires_at: expiresAt,
         revoked_at: null,
         created_at: new Date().toISOString(),
       });
     });
   } else {
-    await db.from('email_verification_tokens').update({ used_at: new Date().toISOString() }).eq('user_id', user.id).is('used_at', null);
-    const { error } = await db.from('email_verification_tokens').insert({
-      user_id: user.id,
-      token_hash: hashToken(token),
-      expires_at: expiresAt,
-    });
-    if (error) throw new AppError(500, 'Could not create verification link', 'VERIFICATION_CREATE_FAILED');
+    const primary = existingRows[0];
+    const { error } = primary
+      ? await db.from('email_verification_tokens').update({
+        token_hash: tokenHash,
+        expires_at: expiresAt,
+        used_at: null,
+        created_at: new Date().toISOString(),
+      }).eq('id', primary.id)
+      : await db.from('email_verification_tokens').insert({
+        user_id: user.id,
+        token_hash: tokenHash,
+        expires_at: expiresAt,
+      });
+    if (error) throw new AppError(500, 'Could not create verification code', 'VERIFICATION_CREATE_FAILED');
+    const obsoleteIds = existingRows.slice(1).map((item) => item.id);
+    if (obsoleteIds.length) {
+      const { error: cleanupError } = await db.from('email_verification_tokens').delete().in('id', obsoleteIds);
+      if (cleanupError) console.error('Could not remove obsolete verification codes', cleanupError);
+    }
   }
   let emailSent = false;
   try {
-    emailSent = await sendVerificationEmail(user.email, user.username, token);
+    emailSent = await sendVerificationEmail(user.email, user.username, code);
   } catch (error) {
     emailSent = false;
     console.error('Could not send verification email', error);
   }
   return {
     emailSent,
-    verificationUrl: isLocalDevelopment ? localVerificationPath(token) : undefined,
+    verificationCode: isLocalDevelopment ? code : undefined,
   };
 }
 
@@ -186,40 +213,55 @@ export const authService = {
     if (refreshToken) await db.from('refresh_tokens').update({ revoked_at: new Date().toISOString() }).eq('token_hash', hashToken(refreshToken));
   },
 
-  async verifyEmail(token: string) {
+  async verifyEmail(emailInput: string, code: string, meta: SessionMeta = {}) {
+    const email = emailInput.trim().toLowerCase();
+    const now = new Date().toISOString();
     if (isLocalDevelopment) {
-      const tokenHash = hashToken(token);
-      await localDb.mutate((state) => {
+      const user = await localDb.mutate((state) => {
+        const candidate = state.users.find((item) => item.email === email);
+        if (!candidate || candidate.email_verified) throw new AppError(400, 'Verification code is invalid or expired', 'INVALID_VERIFICATION_CODE');
+        const tokenHash = hashVerificationCode(candidate.id, code);
         const stored = state.verificationTokens.find((item) => item.token_hash === tokenHash);
-        if (!stored) throw new AppError(400, 'Verification link is invalid or expired', 'INVALID_VERIFICATION_TOKEN');
+        if (!stored || stored.revoked_at || stored.expires_at <= now) throw new AppError(400, 'Verification code is invalid or expired', 'INVALID_VERIFICATION_CODE');
         const user = state.users.find((item) => item.id === stored.user_id);
-        if (!user) throw new AppError(400, 'Verification link is invalid or expired', 'INVALID_VERIFICATION_TOKEN');
-        if (user.email_verified) return;
-        if (stored.revoked_at || stored.expires_at <= new Date().toISOString()) throw new AppError(400, 'Verification link is invalid or expired', 'INVALID_VERIFICATION_TOKEN');
+        if (!user) throw new AppError(400, 'Verification code is invalid or expired', 'INVALID_VERIFICATION_CODE');
         user.email_verified = true;
-        stored.revoked_at = new Date().toISOString();
+        stored.revoked_at = now;
+        return user;
       });
-      return;
+      return {
+        user: mapUser(user as unknown as Record<string, unknown>, true),
+        ...(await createSession(user, meta)),
+      };
     }
-    const { data } = await db.from('email_verification_tokens').select('*').eq('token_hash', hashToken(token)).maybeSingle();
-    if (!data) throw new AppError(400, 'Verification link is invalid or expired', 'INVALID_VERIFICATION_TOKEN');
-    const { data: user } = await db.from('users').select('email_verified').eq('id', data.user_id).maybeSingle();
-    if (user?.email_verified) return;
-    if (data.used_at || data.expires_at <= new Date().toISOString()) throw new AppError(400, 'Verification link is invalid or expired', 'INVALID_VERIFICATION_TOKEN');
-    await db.from('users').update({ email_verified: true }).eq('id', data.user_id);
-    await db.from('email_verification_tokens').update({ used_at: new Date().toISOString() }).eq('id', data.id);
+    const { data: user } = await db.from('users').select('*').eq('email', email).maybeSingle();
+    if (!user || user.email_verified) throw new AppError(400, 'Verification code is invalid or expired', 'INVALID_VERIFICATION_CODE');
+    const tokenHash = hashVerificationCode(user.id, code);
+    const { data } = await db.from('email_verification_tokens').select('id,user_id').eq('token_hash', tokenHash).is('used_at', null).gt('expires_at', now).maybeSingle();
+    if (!data) throw new AppError(400, 'Verification code is invalid or expired', 'INVALID_VERIFICATION_CODE');
+    const { data: consumed, error: consumeError } = await db.from('email_verification_tokens').update({ used_at: now }).eq('id', data.id).is('used_at', null).select('id').maybeSingle();
+    if (consumeError || !consumed) throw new AppError(400, 'Verification code is invalid or expired', 'INVALID_VERIFICATION_CODE');
+    const { error } = await db.from('users').update({ email_verified: true }).eq('id', user.id).eq('email_verified', false);
+    if (error) {
+      await db.from('email_verification_tokens').update({ used_at: null }).eq('id', data.id);
+      throw new AppError(500, 'Could not verify email', 'EMAIL_VERIFICATION_FAILED');
+    }
+    return {
+      user: mapUser(user, true),
+      ...(await createSession(user, meta)),
+    };
   },
 
   async resendVerification(emailInput: string) {
-    if (!env.REQUIRE_EMAIL_VERIFICATION) return { emailSent: true, verificationUrl: undefined };
+    if (!env.REQUIRE_EMAIL_VERIFICATION) return { emailSent: true, verificationCode: undefined };
     const email = emailInput.trim().toLowerCase();
     if (isLocalDevelopment) {
       const user = await localDb.read((state) => state.users.find((item) => item.email === email));
-      if (!user || user.email_verified) return { emailSent: true, verificationUrl: undefined };
+      if (!user || user.email_verified) return { emailSent: true, verificationCode: undefined };
       return createVerification(user);
     }
     const { data } = await db.from('users').select('id,email,username,email_verified').eq('email', email).maybeSingle();
-    if (!data || data.email_verified) return { emailSent: true, verificationUrl: undefined };
+    if (!data || data.email_verified) return { emailSent: true, verificationCode: undefined };
     return createVerification({ id: data.id, email: data.email, username: data.username });
   },
 

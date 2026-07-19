@@ -21,16 +21,17 @@ async function createVerifiedAccount(username: string) {
   const email = `${username.toLowerCase()}.${suffix}@example.com`;
   const registration = await agent.post('/api/v1/auth/register').send({ username, email, password: 'StrongPass123' });
   expect(registration.status).toBe(201);
-  const token = new URL(registration.body.data.verificationUrl as string, 'http://localhost').searchParams.get('token');
-  expect((await agent.post('/api/v1/auth/verify-email').send({ token })).status).toBe(200);
-  const login = await agent.post('/api/v1/auth/login').send({ email, password: 'StrongPass123' });
-  expect(login.status).toBe(200);
+  const verification = await agent.post('/api/v1/auth/verify-email').send({
+    email,
+    code: registration.body.data.verificationCode,
+  });
+  expect(verification.status).toBe(200);
   return {
     agent,
-    id: login.body.data.user.id as string,
+    id: verification.body.data.user.id as string,
     username,
     email,
-    accessToken: login.body.data.accessToken as string,
+    accessToken: verification.body.data.accessToken as string,
   };
 }
 

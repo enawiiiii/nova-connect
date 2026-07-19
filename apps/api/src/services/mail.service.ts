@@ -3,15 +3,6 @@ import { env } from '../config/env.js';
 
 const mailTimeoutMs = 12_000;
 
-export function verificationUrl(token: string) {
-  const clientOrigin = env.CLIENT_URL.split(',')[0]!.trim().replace(/\/$/, '');
-  return `${clientOrigin}/verify-email?token=${encodeURIComponent(token)}`;
-}
-
-export function localVerificationPath(token: string) {
-  return `/verify-email?token=${encodeURIComponent(token)}`;
-}
-
 function sender() {
   const configured = env.MAIL_FROM.trim();
   const namedAddress = /^(.*?)\s*<([^<>]+)>$/.exec(configured);
@@ -22,7 +13,24 @@ function sender() {
   };
 }
 
-async function sendWithBrevo(email: string, username: string, verifyUrl: string) {
+function verificationEmailContent(username: string, code: string) {
+  return {
+    subject: 'رمز تأكيد NOVA Connect',
+    text: `مرحبًا ${username}، رمز تأكيد حسابك في NOVA Connect هو ${code}. ينتهي الرمز خلال 15 دقيقة ولا يمكن استخدامه إلا مرة واحدة.`,
+    html: `
+      <div dir="rtl" style="max-width:560px;margin:auto;padding:32px;background:#0d101a;color:#f4f4f7;border-radius:18px;font-family:Arial,sans-serif">
+        <div style="color:#a78bfa;font-size:12px;letter-spacing:2px">NOVA CONNECT</div>
+        <h1 style="font-size:24px;margin:18px 0 10px">تأكيد بريدك الإلكتروني</h1>
+        <p style="color:#b5b7c2;line-height:1.8">مرحبًا ${username}، أدخل الرمز التالي لإكمال إنشاء حسابك:</p>
+        <div dir="ltr" style="margin:24px 0;padding:18px;text-align:center;font:700 34px monospace;letter-spacing:10px;background:#171225;border:1px solid #4c3479;border-radius:14px;color:#d8ccff">${code}</div>
+        <p style="color:#8d91a0;line-height:1.8">الرمز صالح لمدة 15 دقيقة ولمرة واحدة فقط. إذا لم تطلب إنشاء الحساب فتجاهل هذه الرسالة.</p>
+      </div>
+    `,
+  };
+}
+
+async function sendWithBrevo(email: string, username: string, code: string) {
+  const content = verificationEmailContent(username, code);
   const response = await fetch('https://api.brevo.com/v3/smtp/email', {
     method: 'POST',
     signal: AbortSignal.timeout(mailTimeoutMs),
@@ -34,9 +42,9 @@ async function sendWithBrevo(email: string, username: string, verifyUrl: string)
     body: JSON.stringify({
       sender: sender(),
       to: [{ email, name: username }],
-      subject: 'Verify your NOVA Connect account',
-      textContent: `Hi ${username}, verify your account: ${verifyUrl}`,
-      htmlContent: `<p>Hi ${username},</p><p><a href="${verifyUrl}">Verify your NOVA Connect account</a>.</p>`,
+      subject: content.subject,
+      textContent: content.text,
+      htmlContent: content.html,
       tags: ['account-verification'],
     }),
   });
@@ -47,7 +55,8 @@ async function sendWithBrevo(email: string, username: string, verifyUrl: string)
   return true;
 }
 
-async function sendWithSmtp(email: string, username: string, verifyUrl: string) {
+async function sendWithSmtp(email: string, username: string, code: string) {
+  const content = verificationEmailContent(username, code);
   const transport = nodemailer.createTransport({
     host: env.SMTP_HOST,
     port: env.SMTP_PORT,
@@ -61,21 +70,20 @@ async function sendWithSmtp(email: string, username: string, verifyUrl: string) 
   await transport.sendMail({
     from: env.MAIL_FROM,
     to: email,
-    subject: 'Verify your NOVA Connect account',
-    text: `Hi ${username}, verify your account: ${verifyUrl}`,
-    html: `<p>Hi ${username},</p><p><a href="${verifyUrl}">Verify your NOVA Connect account</a>.</p>`,
+    subject: content.subject,
+    text: content.text,
+    html: content.html,
   });
   return true;
 }
 
-export async function sendVerificationEmail(email: string, username: string, token: string) {
-  const verifyUrl = verificationUrl(token);
-  if (env.BREVO_API_KEY) return sendWithBrevo(email, username, verifyUrl);
+export async function sendVerificationEmail(email: string, username: string, code: string) {
+  if (env.BREVO_API_KEY) return sendWithBrevo(email, username, code);
   if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) {
-    if (env.NODE_ENV !== 'production') console.info(`[mail:dev] Verify ${email}: ${verifyUrl}`);
+    if (env.NODE_ENV !== 'production') console.info(`[mail:dev] Verification code for ${email}: ${code}`);
     return false;
   }
-  return sendWithSmtp(email, username, verifyUrl);
+  return sendWithSmtp(email, username, code);
 }
 
 export function passwordResetUrl(token: string) {

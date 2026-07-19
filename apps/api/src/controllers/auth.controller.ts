@@ -24,7 +24,7 @@ export const authController = {
         user: result.user,
         requiresEmailVerification: true,
         emailSent: result.emailSent,
-        verificationUrl: result.verificationUrl,
+        verificationCode: result.verificationCode,
       },
       message: 'Account created. Check your email to verify it.',
     });
@@ -45,17 +45,25 @@ export const authController = {
     res.status(204).send();
   },
   async verify(req: Request, res: Response) {
-    await authService.verifyEmail(req.body.token);
-    res.json({ data: { verified: true }, message: 'Email verified' });
+    const result = await authService.verifyEmail(req.body.email, req.body.code, { userAgent: req.get('user-agent'), ip: req.ip });
+    res.cookie('nova_refresh', result.refreshToken, cookieOptions);
+    res.json({
+      data: {
+        verified: true,
+        user: result.user,
+        accessToken: result.accessToken,
+      },
+      message: 'Email verified',
+    });
   },
   async resendVerification(req: Request, res: Response) {
     const result = await authService.resendVerification(req.body.email);
     res.json({
       data: {
         sent: result.emailSent,
-        verificationUrl: result.verificationUrl,
+        verificationCode: result.verificationCode,
       },
-      message: 'If this email is awaiting verification, a new link has been sent.',
+      message: 'If this email is awaiting verification, a new code has been sent.',
     });
   },
   async sessions(req: Request, res: Response) { res.json({ data: await authService.sessions(req.user!.id) }); },

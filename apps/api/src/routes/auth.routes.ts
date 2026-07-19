@@ -20,13 +20,13 @@ const requireTrustedOrigin = (req: Request, _res: Response, next: NextFunction) 
 };
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, skipSuccessfulRequests: true, standardHeaders: 'draft-7', legacyHeaders: false });
 const registerLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false });
-const verificationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false });
+const verificationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false });
 
 router.post('/register', registerLimiter, validate(z.object({ body: z.object({ username: z.string().trim().min(3).max(32).regex(/^[A-Za-z0-9_]+$/), email: z.string().trim().email().max(254), password }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.register));
 router.post('/login', loginLimiter, validate(z.object({ body: z.object({ email: z.string().trim().email().max(254), password: z.string().min(1).max(128), totpCode: z.string().regex(/^\d{6}$/).optional() }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.login));
 router.post('/refresh', requireTrustedOrigin, asyncHandler(authController.refresh));
 router.post('/logout', requireTrustedOrigin, asyncHandler(authController.logout));
-router.post('/verify-email', verificationLimiter, validate(z.object({ body: z.object({ token: z.string().min(20).max(256) }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.verify));
+router.post('/verify-email', verificationLimiter, validate(z.object({ body: z.object({ email: z.string().trim().email().max(254), code: z.string().regex(/^\d{6}$/) }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.verify));
 router.post('/resend-verification', rateLimit({ windowMs: 60 * 60 * 1000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false }), validate(z.object({ body: z.object({ email: z.string().trim().email().max(254) }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.resendVerification));
 router.post('/forgot-password', rateLimit({ windowMs: 60 * 60 * 1000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false }), validate(z.object({ body: z.object({ email: z.string().trim().email().max(254) }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.requestPasswordReset));
 router.post('/reset-password', rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false }), validate(z.object({ body: z.object({ token: z.string().min(20).max(256), password }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.resetPassword));

@@ -15,17 +15,34 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [visible, setVisible] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [resendIn, setResendIn] = useState(0);
   const [error, setError] = useState('');
   const [unverified, setUnverified] = useState(false);
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
-  const [verification, setVerification] = useState<{ email: string; emailSent: boolean; verificationUrl?: string } | null>(null);
+  const [verification, setVerification] = useState<{ email: string; emailSent: boolean; verificationCode?: string } | null>(null);
   const [values, setValues] = useState({ username: '', email: '', password: '', totpCode: '' });
   useEffect(() => {
     setVerification(null);
     setUnverified(false);
     setRequiresTwoFactor(false);
+    setVerificationCode('');
+    setResendIn(0);
     setError('');
   }, [mode]);
+  useEffect(() => {
+    if (!verification) return;
+    const timer = window.setInterval(() => setResendIn((value) => Math.max(0, value - 1)), 1_000);
+    return () => window.clearInterval(timer);
+  }, [verification]);
+
+  const showVerification = (next: { email: string; emailSent: boolean; verificationCode?: string }) => {
+    setVerification(next);
+    setVerificationCode(next.verificationCode ?? '');
+    setResendIn(60);
+    setError('');
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -39,7 +56,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           requiresEmailVerification: boolean;
           accessToken?: string;
           emailSent?: boolean;
-          verificationUrl?: string;
+          verificationCode?: string;
         }>('/auth/register', {
           method: 'POST',
           body: { username: values.username, email: values.email, password: values.password },
@@ -49,10 +66,10 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           navigate('/app/chats');
           return;
         }
-        setVerification({
+        showVerification({
           email: result.user.email ?? values.email,
           emailSent: Boolean(result.emailSent),
-          ...(result.verificationUrl ? { verificationUrl: result.verificationUrl } : {}),
+          ...(result.verificationCode ? { verificationCode: result.verificationCode } : {}),
         });
         return;
       }
@@ -64,9 +81,14 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
       setSession(result.user, result.accessToken);
       navigate('/app/chats');
     } catch (reason) {
-      if (reason instanceof ApiError && reason.code === 'EMAIL_NOT_VERIFIED') setUnverified(true);
+      if (reason instanceof ApiError && reason.code === 'EMAIL_NOT_VERIFIED') {
+        setUnverified(true);
+        setError('يجب تأكيد بريدك الإلكتروني قبل تسجيل الدخول.');
+      }
       if (reason instanceof ApiError && reason.code === 'TWO_FACTOR_REQUIRED') setRequiresTwoFactor(true);
-      setError(reason instanceof ApiError ? reason.message : 'Could not connect to NOVA. Please try again.');
+      if (!(reason instanceof ApiError && reason.code === 'EMAIL_NOT_VERIFIED')) {
+        setError(reason instanceof ApiError ? reason.message : 'Could not connect to NOVA. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -76,16 +98,37 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     setError('');
     setResending(true);
     try {
-      const result = await api<{ sent: boolean; verificationUrl?: string }>('/auth/resend-verification', {
+      const result = await api<{ sent: boolean; verificationCode?: string }>('/auth/resend-verification', {
         method: 'POST',
         body: { email },
       });
-      setVerification({ email, emailSent: result.sent, ...(result.verificationUrl ? { verificationUrl: result.verificationUrl } : {}) });
+      showVerification({ email, emailSent: result.sent, ...(result.verificationCode ? { verificationCode: result.verificationCode } : {}) });
       setUnverified(false);
     } catch (reason) {
       setError(reason instanceof ApiError ? reason.message : 'تعذر إعادة إرسال رسالة التحقق.');
     } finally {
       setResending(false);
+    }
+  };
+
+  const verifyEmail = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!verification || !/^\d{6}$/.test(verificationCode)) return;
+    setError('');
+    setVerifying(true);
+    try {
+      const result = await api<{ user: PublicUser; accessToken: string }>('/auth/verify-email', {
+        method: 'POST',
+        body: { email: verification.email, code: verificationCode },
+      });
+      setSession(result.user, result.accessToken);
+      navigate('/app/chats');
+    } catch (reason) {
+      setError(reason instanceof ApiError && reason.code === 'INVALID_VERIFICATION_CODE'
+        ? 'الرمز غير صحيح أو انتهت صلاحيته. اطلب رمزًا جديدًا وحاول مرة أخرى.'
+        : reason instanceof ApiError ? reason.message : 'تعذر تأكيد البريد الآن.');
+    } finally {
+      setVerifying(false);
     }
   };
   return (
@@ -96,20 +139,40 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
         <div className="auth-card">
           {verification ? (
             <section className="verification-pending" aria-live="polite">
-              <span className="verification-icon"><CheckCircle2 /></span>
+              <span className="verification-icon"><Mail /></span>
               <div className="auth-heading">
-                <span>EMAIL / VERIFICATION</span>
-                <h1>تحقق من بريدك</h1>
-                <p>أرسلنا رابط تأكيد الحساب إلى <strong>{verification.email}</strong>. لن تتمكن من تسجيل الدخول قبل التأكيد.</p>
+                <span>EMAIL / SECURITY CODE</span>
+                <h1>أدخل رمز التأكيد</h1>
+                <p>أرسلنا رمزًا من 6 أرقام إلى <strong>{verification.email}</strong>. الرمز صالح لمدة 15 دقيقة ولمرة واحدة فقط.</p>
               </div>
-              {!verification.emailSent && verification.verificationUrl && <div className="local-verification-note">التجربة المحلية لا تملك خدمة بريد بعد. استخدم الزر التالي لتأكيد الحساب على هذا الجهاز.</div>}
-              {!verification.emailSent && !verification.verificationUrl && <div className="form-error">تعذر إرسال الرسالة الآن. تأكد من إعدادات SMTP ثم أعد المحاولة.</div>}
-              {verification.verificationUrl && <a className="button button-primary" href={verification.verificationUrl}><Mail />تأكيد الحساب الآن</a>}
-              <button className="button verification-resend" type="button" disabled={resending} onClick={() => void resend(verification.email)}>
-                <RefreshCw className={resending ? 'spin' : ''} />{resending ? 'جارٍ الإرسال…' : 'إعادة إرسال رابط التحقق'}
+              {!verification.emailSent && verification.verificationCode && <div className="local-verification-note">رمز التجربة المحلية: <strong dir="ltr">{verification.verificationCode}</strong></div>}
+              {!verification.emailSent && !verification.verificationCode && <div className="form-error">تعذر إرسال الرمز الآن. أعد المحاولة بعد قليل.</div>}
+              <form className="verification-code-form" onSubmit={verifyEmail}>
+                <label htmlFor="email-verification-code">رمز التأكيد</label>
+                <input
+                  id="email-verification-code"
+                  required
+                  autoFocus
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="\d{6}"
+                  maxLength={6}
+                  value={verificationCode}
+                  onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="000000"
+                  aria-label="رمز تأكيد البريد"
+                />
+                <button className="button button-primary" type="submit" disabled={verifying || verificationCode.length !== 6}>
+                  {verifying ? <RefreshCw className="spin" /> : <CheckCircle2 />}
+                  {verifying ? 'جارٍ التحقق…' : 'تأكيد البريد والدخول'}
+                </button>
+              </form>
+              <button className="button verification-resend" type="button" disabled={resending || resendIn > 0} onClick={() => void resend(verification.email)}>
+                <RefreshCw className={resending ? 'spin' : ''} />
+                {resending ? 'جارٍ الإرسال…' : resendIn > 0 ? `إعادة الإرسال بعد ${resendIn} ث` : 'إرسال رمز جديد'}
               </button>
               {error && <div className="form-error" role="alert">{error}</div>}
-              <Link className="verification-login" to="/login">تم التأكيد؟ انتقل إلى تسجيل الدخول</Link>
+              <button className="verification-login" type="button" onClick={() => { setVerification(null); setVerificationCode(''); setError(''); }}>تغيير البريد أو العودة</button>
             </section>
           ) : (
             <>
@@ -124,7 +187,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             {mode === 'login' && <Link className="forgot-password-link" to="/forgot-password">نسيت كلمة المرور؟</Link>}
             {mode === 'register' && <small className="password-hint">8+ characters · uppercase · lowercase · number</small>}
             {error && <div className="form-error" role="alert">{error}</div>}
-            {unverified && <button className="button verification-resend" type="button" disabled={resending} onClick={() => void resend(values.email)}><RefreshCw />إعادة إرسال رابط التحقق</button>}
+            {unverified && <button className="button verification-resend" type="button" disabled={resending} onClick={() => void resend(values.email)}><RefreshCw />إرسال رمز تأكيد جديد</button>}
             <button className="button button-primary submit-button" disabled={loading}>{loading ? 'Connecting…' : t(mode === 'login' ? 'auth.login' : 'auth.register')}<ArrowRight /></button>
           </form>
           <p className="auth-switch">{t(mode === 'login' ? 'auth.noAccount' : 'auth.hasAccount')} <Link to={mode === 'login' ? '/register' : '/login'}>{t(mode === 'login' ? 'auth.create' : 'auth.signIn')}</Link></p>
