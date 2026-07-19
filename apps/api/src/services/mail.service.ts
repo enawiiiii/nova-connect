@@ -3,6 +3,24 @@ import { env } from '../config/env.js';
 
 const mailTimeoutMs = 12_000;
 
+export type MailDeliveryErrorCode =
+  | 'EMAIL_PROVIDER_AUTH_FAILED'
+  | 'EMAIL_SENDER_REJECTED'
+  | 'EMAIL_PROVIDER_LIMIT'
+  | 'EMAIL_PROVIDER_UNAVAILABLE'
+  | 'EMAIL_DELIVERY_REJECTED';
+
+export class MailDeliveryError extends Error {
+  constructor(
+    public readonly code: MailDeliveryErrorCode,
+    message: string,
+    public readonly status?: number,
+  ) {
+    super(message);
+    this.name = 'MailDeliveryError';
+  }
+}
+
 function sender() {
   const configured = env.MAIL_FROM.trim();
   const namedAddress = /^(.*?)\s*<([^<>]+)>$/.exec(configured);
@@ -29,30 +47,51 @@ function verificationEmailContent(username: string, code: string) {
   };
 }
 
+function brevoErrorCode(status: number, details: string): MailDeliveryErrorCode {
+  if (status === 401 || status === 403) return 'EMAIL_PROVIDER_AUTH_FAILED';
+  if (status === 402 || status === 429) return 'EMAIL_PROVIDER_LIMIT';
+  if (status === 400 && /sender|from|verified|authenticate/i.test(details)) return 'EMAIL_SENDER_REJECTED';
+  if (status >= 500) return 'EMAIL_PROVIDER_UNAVAILABLE';
+  return 'EMAIL_DELIVERY_REJECTED';
+}
+
+async function brevoRequest(payload: Record<string, unknown>) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        signal: AbortSignal.timeout(mailTimeoutMs),
+        headers: {
+          'api-key': env.BREVO_API_KEY!,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch (error) {
+      if (attempt === 0) continue;
+      throw new MailDeliveryError('EMAIL_PROVIDER_UNAVAILABLE', `Brevo request failed: ${error instanceof Error ? error.message : 'network error'}`);
+    }
+    if (response.ok) return true;
+    const details = (await response.text()).slice(0, 500);
+    const code = brevoErrorCode(response.status, details);
+    if (attempt === 0 && (response.status === 429 || response.status >= 500)) continue;
+    throw new MailDeliveryError(code, `Brevo email request failed (${response.status}): ${details}`, response.status);
+  }
+  throw new MailDeliveryError('EMAIL_PROVIDER_UNAVAILABLE', 'Brevo email request failed');
+}
+
 async function sendWithBrevo(email: string, username: string, code: string) {
   const content = verificationEmailContent(username, code);
-  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    signal: AbortSignal.timeout(mailTimeoutMs),
-    headers: {
-      'api-key': env.BREVO_API_KEY!,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-    },
-    body: JSON.stringify({
-      sender: sender(),
-      to: [{ email, name: username }],
-      subject: content.subject,
-      textContent: content.text,
-      htmlContent: content.html,
-      tags: ['account-verification'],
-    }),
+  return brevoRequest({
+    sender: sender(),
+    to: [{ email, name: username }],
+    subject: content.subject,
+    textContent: content.text,
+    htmlContent: content.html,
+    tags: ['account-verification'],
   });
-  if (!response.ok) {
-    const details = (await response.text()).slice(0, 500);
-    throw new Error(`Brevo email request failed (${response.status}): ${details}`);
-  }
-  return true;
 }
 
 async function sendWithSmtp(email: string, username: string, code: string) {
@@ -83,7 +122,11 @@ export async function sendVerificationEmail(email: string, username: string, cod
     if (env.NODE_ENV !== 'production') console.info(`[mail:dev] Verification code for ${email}: ${code}`);
     return false;
   }
-  return sendWithSmtp(email, username, code);
+  try {
+    return await sendWithSmtp(email, username, code);
+  } catch (error) {
+    throw new MailDeliveryError('EMAIL_PROVIDER_UNAVAILABLE', `SMTP request failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+  }
 }
 
 export function passwordResetUrl(token: string) {
@@ -94,21 +137,14 @@ export function passwordResetUrl(token: string) {
 export async function sendPasswordResetEmail(email: string, username: string, token: string) {
   const resetUrl = passwordResetUrl(token);
   if (env.BREVO_API_KEY) {
-    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-      method: 'POST',
-      signal: AbortSignal.timeout(mailTimeoutMs),
-      headers: { 'api-key': env.BREVO_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        sender: sender(),
-        to: [{ email, name: username }],
-        subject: 'Reset your NOVA Connect password',
-        textContent: `Hi ${username}, reset your password: ${resetUrl}. This link expires in one hour.`,
-        htmlContent: `<p>Hi ${username},</p><p><a href="${resetUrl}">Reset your NOVA Connect password</a>. This link expires in one hour.</p>`,
-        tags: ['password-reset'],
-      }),
+    return brevoRequest({
+      sender: sender(),
+      to: [{ email, name: username }],
+      subject: 'Reset your NOVA Connect password',
+      textContent: `Hi ${username}, reset your password: ${resetUrl}. This link expires in one hour.`,
+      htmlContent: `<p>Hi ${username},</p><p><a href="${resetUrl}">Reset your NOVA Connect password</a>. This link expires in one hour.</p>`,
+      tags: ['password-reset'],
     });
-    if (!response.ok) throw new Error(`Brevo password reset request failed (${response.status}): ${(await response.text()).slice(0, 500)}`);
-    return true;
   }
   if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) {
     if (env.NODE_ENV !== 'production') console.info(`[mail:dev] Reset ${email}: ${resetUrl}`);

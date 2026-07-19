@@ -7,7 +7,7 @@ import { localDb, type LocalUser } from '../database/local.database.js';
 import { AppError } from '../utils/errors.js';
 import { mapUser } from '../utils/mappers.js';
 import { createOpaqueToken, hashToken, signAccessToken } from './token.service.js';
-import { passwordResetUrl, sendPasswordResetEmail, sendVerificationEmail } from './mail.service.js';
+import { MailDeliveryError, passwordResetUrl, sendPasswordResetEmail, sendVerificationEmail, type MailDeliveryErrorCode } from './mail.service.js';
 import { accountModerationService } from './account-moderation.service.js';
 
 interface Credentials { email: string; password: string; totpCode?: string }
@@ -89,16 +89,52 @@ async function createVerification(user: { id: string; email: string; username: s
     }
   }
   let emailSent = false;
+  let emailErrorCode: MailDeliveryErrorCode | undefined;
   try {
     emailSent = await sendVerificationEmail(user.email, user.username, code);
   } catch (error) {
     emailSent = false;
+    emailErrorCode = error instanceof MailDeliveryError ? error.code : 'EMAIL_PROVIDER_UNAVAILABLE';
     console.error('Could not send verification email', error);
   }
   return {
     emailSent,
+    emailErrorCode,
     verificationCode: isLocalDevelopment ? code : undefined,
   };
+}
+
+async function removePendingUser(userId: string) {
+  if (isLocalDevelopment) {
+    await localDb.mutate((state) => {
+      state.users = state.users.filter((item) => item.id !== userId || item.email_verified);
+      state.verificationTokens = state.verificationTokens.filter((item) => item.user_id !== userId);
+    });
+    return;
+  }
+  const { error } = await db.from('users').delete().eq('id', userId).eq('email_verified', false);
+  if (error) console.error('Could not clean up pending registration', error);
+}
+
+function deliveryError(code: MailDeliveryErrorCode | undefined) {
+  const messages: Record<MailDeliveryErrorCode, string> = {
+    EMAIL_PROVIDER_AUTH_FAILED: 'مفتاح Brevo غير صالح أو لا يملك صلاحية إرسال البريد.',
+    EMAIL_SENDER_REJECTED: 'عنوان المرسل غير معتمد في Brevo. تحقق من المرسل MAIL_FROM.',
+    EMAIL_PROVIDER_LIMIT: 'تم بلوغ حد إرسال البريد مؤقتًا. حاول مرة أخرى بعد قليل.',
+    EMAIL_PROVIDER_UNAVAILABLE: 'خدمة إرسال البريد غير متاحة الآن. حاول مرة أخرى بعد قليل.',
+    EMAIL_DELIVERY_REJECTED: 'رفض مزود البريد إرسال الرمز. تحقق من إعدادات Brevo والمرسل.',
+  };
+  const safeCode = code ?? 'EMAIL_PROVIDER_UNAVAILABLE';
+  return new AppError(503, messages[safeCode], safeCode);
+}
+
+async function requireDeliveredVerification(
+  user: { id: string },
+  verification: Awaited<ReturnType<typeof createVerification>>,
+) {
+  if (verification.emailSent || verification.verificationCode) return verification;
+  await removePendingUser(user.id);
+  throw deliveryError(verification.emailErrorCode);
 }
 
 export const authService = {
@@ -106,40 +142,62 @@ export const authService = {
     const email = input.email.trim().toLowerCase();
     const username = input.username.trim();
     if (isLocalDevelopment) {
-      const existing = await localDb.read((state) => state.users.some((user) => user.email === email || user.username.toLowerCase() === username.toLowerCase()));
-      if (existing) throw new AppError(409, 'Email or username is already in use', 'ACCOUNT_EXISTS');
+      const { existingEmail, existingUsername } = await localDb.read((state) => ({
+        existingEmail: state.users.find((user) => user.email === email),
+        existingUsername: state.users.find((user) => user.username.toLowerCase() === username.toLowerCase()),
+      }));
+      if (existingEmail?.email_verified || (existingUsername && existingUsername.id !== existingEmail?.id)) {
+        throw new AppError(409, 'Email or username is already in use', 'ACCOUNT_EXISTS');
+      }
       const createdAt = new Date().toISOString();
-      const user: LocalUser = {
-        id: crypto.randomUUID(), username, email, password_hash: await bcrypt.hash(input.password, env.BCRYPT_ROUNDS), avatar: null, bio: null, status: 'offline', last_seen: createdAt, email_verified: !env.REQUIRE_EMAIL_VERIFICATION, created_at: createdAt,
+      const passwordHash = await bcrypt.hash(input.password, env.BCRYPT_ROUNDS);
+      const user: LocalUser = existingEmail ?? {
+        id: crypto.randomUUID(), username, email, password_hash: passwordHash, avatar: null, bio: null, status: 'offline', last_seen: createdAt, email_verified: !env.REQUIRE_EMAIL_VERIFICATION, created_at: createdAt,
       };
-      await localDb.mutate((state) => { state.users.push(user); });
+      user.username = username;
+      user.password_hash = passwordHash;
+      user.created_at = createdAt;
+      await localDb.mutate((state) => {
+        const stored = state.users.find((item) => item.id === user.id);
+        if (stored) Object.assign(stored, user);
+        else state.users.push(user);
+      });
       if (!env.REQUIRE_EMAIL_VERIFICATION) {
         const session = await createSession(user, meta);
         return { user: mapUser(user as unknown as Record<string, unknown>, true), requiresEmailVerification: false as const, ...session };
       }
-      const verification = await createVerification(user);
+      const verification = await requireDeliveredVerification(user, await createVerification(user));
       return { user: mapUser(user as unknown as Record<string, unknown>, true), requiresEmailVerification: true as const, ...verification };
     }
     const [{ data: existingEmail }, { data: existingUsername }] = await Promise.all([
-      db.from('users').select('id').eq('email', email).maybeSingle(),
+      db.from('users').select('*').eq('email', email).maybeSingle(),
       db.from('users').select('id').eq('username', username).maybeSingle(),
     ]);
-    if (existingEmail || existingUsername) throw new AppError(409, 'Email or username is already in use', 'ACCOUNT_EXISTS');
+    if (existingEmail?.email_verified || (existingUsername && existingUsername.id !== existingEmail?.id)) {
+      throw new AppError(409, 'Email or username is already in use', 'ACCOUNT_EXISTS');
+    }
 
     const passwordHash = await bcrypt.hash(input.password, env.BCRYPT_ROUNDS);
-    const { data, error } = await db.from('users').insert({
-      email,
-      username,
-      password_hash: passwordHash,
-      email_verified: !env.REQUIRE_EMAIL_VERIFICATION,
-    }).select('*').single();
+    const { data, error } = existingEmail
+      ? await db.from('users').update({
+        username,
+        password_hash: passwordHash,
+        email_verified: !env.REQUIRE_EMAIL_VERIFICATION,
+        created_at: new Date().toISOString(),
+      }).eq('id', existingEmail.id).eq('email_verified', false).select('*').single()
+      : await db.from('users').insert({
+        email,
+        username,
+        password_hash: passwordHash,
+        email_verified: !env.REQUIRE_EMAIL_VERIFICATION,
+      }).select('*').single();
     if (error || !data) throw new AppError(500, 'Could not create account', 'ACCOUNT_CREATE_FAILED');
 
     if (!env.REQUIRE_EMAIL_VERIFICATION) {
       const session = await createSession({ id: data.id, email, username }, meta);
       return { user: mapUser(data, true), requiresEmailVerification: false as const, ...session };
     }
-    const verification = await createVerification({ id: data.id, email, username });
+    const verification = await requireDeliveredVerification(data, await createVerification({ id: data.id, email, username }));
     return { user: mapUser(data, true), requiresEmailVerification: true as const, ...verification };
   },
 
@@ -258,11 +316,11 @@ export const authService = {
     if (isLocalDevelopment) {
       const user = await localDb.read((state) => state.users.find((item) => item.email === email));
       if (!user || user.email_verified) return { emailSent: true, verificationCode: undefined };
-      return createVerification(user);
+      return requireDeliveredVerification(user, await createVerification(user));
     }
     const { data } = await db.from('users').select('id,email,username,email_verified').eq('email', email).maybeSingle();
     if (!data || data.email_verified) return { emailSent: true, verificationCode: undefined };
-    return createVerification({ id: data.id, email: data.email, username: data.username });
+    return requireDeliveredVerification(data, await createVerification({ id: data.id, email: data.email, username: data.username }));
   },
 
   async sessions(userId: string) {

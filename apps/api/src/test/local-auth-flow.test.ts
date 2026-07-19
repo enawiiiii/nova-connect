@@ -133,4 +133,29 @@ describe('local account flow', () => {
       code: 'INVALID_VERIFICATION_CODE',
     });
   });
+
+  it('allows an unverified email to restart registration instead of reserving it', async () => {
+    const email = `pending.${suffix}@example.com`;
+    const first = await request(app).post('/api/v1/auth/register').send({
+      username: `PendingA_${suffix}`,
+      email,
+      password: 'StrongPass123',
+    });
+    expect(first.status).toBe(201);
+
+    const second = await request(app).post('/api/v1/auth/register').send({
+      username: `PendingB_${suffix}`,
+      email,
+      password: 'NewStrongPass456',
+    });
+    expect(second.status).toBe(201);
+    expect(second.body.data.user.username).toBe(`PendingB_${suffix}`);
+    expect(second.body.data.verificationCode).not.toBe(first.body.data.verificationCode);
+
+    const oldCode = await request(app).post('/api/v1/auth/verify-email').send({
+      email,
+      code: first.body.data.verificationCode,
+    });
+    expect(oldCode.status).toBe(400);
+  });
 });

@@ -40,4 +40,17 @@ describe('verification email', () => {
     expect(payload.htmlContent).toContain('15 دقيقة');
     expect(payload.htmlContent).not.toContain('/verify-email?token=');
   });
+
+  it('classifies an invalid Brevo key without exposing it', async () => {
+    fetchMock.mockReset().mockResolvedValueOnce(new Response(
+      JSON.stringify({ message: 'unauthorized' }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } },
+    ));
+
+    await expect(sendVerificationEmail('person@example.com', 'NovaUser', '483920')).rejects.toMatchObject({
+      code: 'EMAIL_PROVIDER_AUTH_FAILED',
+      status: 401,
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 });

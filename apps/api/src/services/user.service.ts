@@ -32,8 +32,8 @@ export const userService = {
   async search(query: string, currentUserId: string) {
     const safe = query.trim().slice(0, 50);
     if (safe.length < 2) return [];
-    if (isLocalDevelopment) return localDb.read((state) => state.users.filter((user) => user.id !== currentUserId && user.allow_friend_requests !== false && user.username.toLowerCase().includes(safe.toLowerCase())).slice(0, 20).map((user) => mapUser(user as unknown as Record<string, unknown>)));
-    const { data, error } = await db.from('users').select('id,username,avatar,bio,status,last_seen,show_avatar,show_last_seen,allow_friend_requests').neq('id', currentUserId).eq('allow_friend_requests', true).ilike('username', `%${safe}%`).limit(20);
+    if (isLocalDevelopment) return localDb.read((state) => state.users.filter((user) => user.id !== currentUserId && user.email_verified && user.allow_friend_requests !== false && user.username.toLowerCase().includes(safe.toLowerCase())).slice(0, 20).map((user) => mapUser(user as unknown as Record<string, unknown>)));
+    const { data, error } = await db.from('users').select('id,username,avatar,bio,status,last_seen,show_avatar,show_last_seen,allow_friend_requests').neq('id', currentUserId).eq('email_verified', true).eq('allow_friend_requests', true).ilike('username', `%${safe}%`).limit(20);
     if (error) throw new AppError(500, 'Could not search users', 'USER_SEARCH_FAILED');
     return (data ?? []).map((user) => mapUser(user));
   },
