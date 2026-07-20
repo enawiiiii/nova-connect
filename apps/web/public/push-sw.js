@@ -40,7 +40,8 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const targetUrl = new URL(event.notification.data?.url || '/app', self.location.origin).href;
+  const requestedUrl = new URL(event.notification.data?.url || '/app', self.location.origin);
+  const targetUrl = requestedUrl.origin === self.location.origin ? requestedUrl.href : new URL('/app', self.location.origin).href;
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     const existing = windows.find((client) => 'focus' in client);

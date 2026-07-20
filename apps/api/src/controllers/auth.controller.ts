@@ -2,13 +2,13 @@ import type { Request, Response } from 'express';
 import { env } from '../config/env.js';
 import { authService } from '../services/auth.service.js';
 
-const cookieOptions = { httpOnly: true, secure: env.COOKIE_SECURE, sameSite: env.COOKIE_SAME_SITE, path: '/api/v1/auth', maxAge: env.REFRESH_TOKEN_DAYS * 86_400_000 };
+export const refreshCookieOptions = { httpOnly: true, secure: env.COOKIE_SECURE, sameSite: env.COOKIE_SAME_SITE, path: '/api/v1/auth', maxAge: env.REFRESH_TOKEN_DAYS * 86_400_000 };
 
 export const authController = {
   async register(req: Request, res: Response) {
     const result = await authService.register(req.body, { userAgent: req.get('user-agent'), ip: req.ip });
     if (!result.requiresEmailVerification) {
-      res.cookie('nova_refresh', result.refreshToken, cookieOptions);
+      res.cookie('nova_refresh', result.refreshToken, refreshCookieOptions);
       res.status(201).json({
         data: {
           user: result.user,
@@ -31,22 +31,22 @@ export const authController = {
   },
   async login(req: Request, res: Response) {
     const result = await authService.login(req.body, { userAgent: req.get('user-agent'), ip: req.ip });
-    res.cookie('nova_refresh', result.refreshToken, cookieOptions);
+    res.cookie('nova_refresh', result.refreshToken, refreshCookieOptions);
     res.json({ data: { user: result.user, accessToken: result.accessToken } });
   },
   async refresh(req: Request, res: Response) {
     const result = await authService.refresh(req.cookies.nova_refresh);
-    res.cookie('nova_refresh', result.refreshToken, cookieOptions);
+    res.cookie('nova_refresh', result.refreshToken, refreshCookieOptions);
     res.json({ data: { accessToken: result.accessToken } });
   },
   async logout(req: Request, res: Response) {
     await authService.logout(req.cookies.nova_refresh);
-    res.clearCookie('nova_refresh', cookieOptions);
+    res.clearCookie('nova_refresh', refreshCookieOptions);
     res.status(204).send();
   },
   async verify(req: Request, res: Response) {
     const result = await authService.verifyEmail(req.body.email, req.body.code, { userAgent: req.get('user-agent'), ip: req.ip });
-    res.cookie('nova_refresh', result.refreshToken, cookieOptions);
+    res.cookie('nova_refresh', result.refreshToken, refreshCookieOptions);
     res.json({
       data: {
         verified: true,
@@ -68,7 +68,7 @@ export const authController = {
   },
   async sessions(req: Request, res: Response) { res.json({ data: await authService.sessions(req.user!.id) }); },
   async revokeSession(req: Request, res: Response) { await authService.revokeSession(req.user!.id, String(req.params.id)); res.status(204).send(); },
-  async changePassword(req: Request, res: Response) { await authService.changePassword(req.user!.id, req.body.currentPassword, req.body.newPassword); res.status(204).send(); },
+  async changePassword(req: Request, res: Response) { await authService.changePassword(req.user!.id, req.body.currentPassword, req.body.newPassword, req.cookies.nova_refresh); res.status(204).send(); },
   async setupTotp(req: Request, res: Response) { res.json({ data: await authService.setupTotp(req.user!.id) }); },
   async enableTotp(req: Request, res: Response) { await authService.enableTotp(req.user!.id, req.body.code); res.status(204).send(); },
   async disableTotp(req: Request, res: Response) { await authService.disableTotp(req.user!.id, req.body.code); res.status(204).send(); },

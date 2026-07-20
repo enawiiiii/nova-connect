@@ -29,6 +29,7 @@ const schema = z.object({
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().default('mailto:connextnova@gmail.com'),
   BREVO_API_KEY: z.string().optional(),
+  MAIL_TRANSPORT: z.enum(['smtp', 'brevo']).optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().default(587),
   SMTP_USER: z.string().optional(),
@@ -59,6 +60,8 @@ if (env.NODE_ENV === 'production') {
   if (env.REQUIRE_EMAIL_VERIFICATION && !env.BREVO_API_KEY && !hasSmtp) {
     throw new Error('BREVO_API_KEY or SMTP credentials are required in production for email verification');
   }
+  if (env.MAIL_TRANSPORT === 'smtp' && !hasSmtp) throw new Error('MAIL_TRANSPORT=smtp requires SMTP credentials');
+  if (env.MAIL_TRANSPORT === 'brevo' && !env.BREVO_API_KEY) throw new Error('MAIL_TRANSPORT=brevo requires BREVO_API_KEY');
   if (env.TURN_URL && !env.TURN_SECRET && !(env.TURN_USERNAME && env.TURN_CREDENTIAL)) {
     throw new Error('TURN_URL requires TURN_SECRET or TURN_USERNAME and TURN_CREDENTIAL');
   }

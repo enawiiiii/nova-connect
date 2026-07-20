@@ -1,5 +1,6 @@
 import type { Request, Response } from 'express';
 import { userService } from '../services/user.service.js';
+import { refreshCookieOptions } from './auth.controller.js';
 
 export const userController = {
   async me(req: Request, res: Response) { res.json({ data: await userService.getById(req.user!.id) }); },
@@ -14,7 +15,7 @@ export const userController = {
   },
   async deleteAccount(req: Request, res: Response) {
     await userService.deleteAccount(req.user!.id, req.body.password);
-    res.clearCookie('refresh_token');
+    res.clearCookie('nova_refresh', refreshCookieOptions);
     res.status(204).send();
   },
 };

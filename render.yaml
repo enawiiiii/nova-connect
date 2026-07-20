@@ -35,7 +35,9 @@ services:
       - key: COOKIE_SAME_SITE
         value: lax
       - key: REQUIRE_EMAIL_VERIFICATION
-        value: false
+        value: true
+      - key: MAIL_TRANSPORT
+        value: brevo
       - key: BREVO_API_KEY
         sync: false
       - key: SMTP_HOST

@@ -19,5 +19,16 @@ describe('health endpoint', () => {
     const response = await request(app).post('/api/v1/auth/login').set('Content-Type', 'application/json').send('{');
     expect(response.status).toBe(400);
     expect(response.body.error.code).toBe('INVALID_JSON');
+    expect(response.headers['cache-control']).toContain('no-store');
+  });
+
+  it('rejects oversized JSON without exposing an internal error', async () => {
+    const response = await request(app).post('/api/v1/auth/login').send({
+      email: `${'a'.repeat(40_000)}@example.com`,
+      password: 'Password123',
+    });
+    expect(response.status).toBe(413);
+    expect(response.body.error.code).toBe('PAYLOAD_TOO_LARGE');
+    expect(response.headers['cache-control']).toContain('no-store');
   });
 });

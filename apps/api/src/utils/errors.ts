@@ -21,6 +21,9 @@ export function errorHandler(error: unknown, req: Request, res: Response, _next:
   if (error && typeof error === 'object' && 'type' in error && error.type === 'entity.parse.failed') {
     return res.status(400).json({ error: { code: 'INVALID_JSON', message: 'Request body contains invalid JSON' } });
   }
+  if (error && typeof error === 'object' && 'type' in error && error.type === 'entity.too.large') {
+    return res.status(413).json({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Request body is too large' } });
+  }
   if (error instanceof ZodError) {
     return res.status(422).json({
       error: { code: 'VALIDATION_ERROR', message: error.issues[0]?.message ?? 'Invalid request', details: error.flatten() },

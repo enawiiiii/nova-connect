@@ -117,8 +117,10 @@ async function sendWithSmtp(email: string, username: string, code: string) {
 }
 
 export async function sendVerificationEmail(email: string, username: string, code: string) {
-  if (env.BREVO_API_KEY) return sendWithBrevo(email, username, code);
-  if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) {
+  const hasSmtp = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
+  const selectedTransport = env.MAIL_TRANSPORT ?? (env.BREVO_API_KEY ? 'brevo' : 'smtp');
+  if (selectedTransport === 'brevo' && env.BREVO_API_KEY) return sendWithBrevo(email, username, code);
+  if (!hasSmtp) {
     if (env.NODE_ENV !== 'production') console.info(`[mail:dev] Verification code for ${email}: ${code}`);
     return false;
   }
@@ -136,7 +138,9 @@ export function passwordResetUrl(token: string) {
 
 export async function sendPasswordResetEmail(email: string, username: string, token: string) {
   const resetUrl = passwordResetUrl(token);
-  if (env.BREVO_API_KEY) {
+  const hasSmtp = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
+  const selectedTransport = env.MAIL_TRANSPORT ?? (env.BREVO_API_KEY ? 'brevo' : 'smtp');
+  if (selectedTransport === 'brevo' && env.BREVO_API_KEY) {
     return brevoRequest({
       sender: sender(),
       to: [{ email, name: username }],
@@ -146,7 +150,7 @@ export async function sendPasswordResetEmail(email: string, username: string, to
       tags: ['password-reset'],
     });
   }
-  if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASS) {
+  if (!hasSmtp) {
     if (env.NODE_ENV !== 'production') console.info(`[mail:dev] Reset ${email}: ${resetUrl}`);
     return false;
   }

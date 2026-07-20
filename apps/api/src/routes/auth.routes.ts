@@ -21,6 +21,8 @@ const requireTrustedOrigin = (req: Request, _res: Response, next: NextFunction) 
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, skipSuccessfulRequests: true, standardHeaders: 'draft-7', legacyHeaders: false });
 const registerLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false });
 const verificationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false });
+const passwordChangeLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false });
+const twoFactorLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standardHeaders: 'draft-7', legacyHeaders: false });
 
 router.post('/register', registerLimiter, validate(z.object({ body: z.object({ username: z.string().trim().min(3).max(32).regex(/^[A-Za-z0-9_]+$/), email: z.string().trim().email().max(254), password }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.register));
 router.post('/login', loginLimiter, validate(z.object({ body: z.object({ email: z.string().trim().email().max(254), password: z.string().min(1).max(128), totpCode: z.string().regex(/^\d{6}$/).optional() }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.login));
@@ -32,9 +34,9 @@ router.post('/forgot-password', rateLimit({ windowMs: 60 * 60 * 1000, limit: 5, 
 router.post('/reset-password', rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, standardHeaders: 'draft-7', legacyHeaders: false }), validate(z.object({ body: z.object({ token: z.string().min(20).max(256), password }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.resetPassword));
 router.get('/sessions', authenticate, asyncHandler(authController.sessions));
 router.delete('/sessions/:id', authenticate, validate(z.object({ body: z.any(), query: z.any(), params: z.object({ id: z.string().uuid() }) })), asyncHandler(authController.revokeSession));
-router.post('/change-password', authenticate, validate(z.object({ body: z.object({ currentPassword: z.string().min(1).max(128), newPassword: password }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.changePassword));
-router.post('/2fa/setup', authenticate, asyncHandler(authController.setupTotp));
-router.post('/2fa/enable', authenticate, validate(z.object({ body: z.object({ code: z.string().regex(/^\d{6}$/) }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.enableTotp));
-router.post('/2fa/disable', authenticate, validate(z.object({ body: z.object({ code: z.string().regex(/^\d{6}$/) }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.disableTotp));
+router.post('/change-password', passwordChangeLimiter, authenticate, validate(z.object({ body: z.object({ currentPassword: z.string().min(1).max(128), newPassword: password }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.changePassword));
+router.post('/2fa/setup', twoFactorLimiter, authenticate, asyncHandler(authController.setupTotp));
+router.post('/2fa/enable', twoFactorLimiter, authenticate, validate(z.object({ body: z.object({ code: z.string().regex(/^\d{6}$/) }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.enableTotp));
+router.post('/2fa/disable', twoFactorLimiter, authenticate, validate(z.object({ body: z.object({ code: z.string().regex(/^\d{6}$/) }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.disableTotp));
 
 export default router;

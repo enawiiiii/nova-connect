@@ -14,11 +14,11 @@ export const createOpaqueToken = () => crypto.randomBytes(48).toString('base64ur
 export const signAccessToken = (user: TokenUser) => jwt.sign(
   { email: user.email, username: user.username },
   env.JWT_ACCESS_SECRET,
-  { subject: user.id, expiresIn: env.ACCESS_TOKEN_TTL as SignOptions['expiresIn'], issuer: 'nova-connect' },
+  { subject: user.id, expiresIn: env.ACCESS_TOKEN_TTL as SignOptions['expiresIn'], issuer: 'nova-connect', algorithm: 'HS256' },
 );
 
 export const verifyAccessToken = (token: string): TokenUser => {
-  const payload = jwt.verify(token, env.JWT_ACCESS_SECRET, { issuer: 'nova-connect' });
+  const payload = jwt.verify(token, env.JWT_ACCESS_SECRET, { issuer: 'nova-connect', algorithms: ['HS256'] });
   if (typeof payload === 'string' || !payload.sub || !payload.email || !payload.username) {
     throw new Error('Invalid access token');
   }

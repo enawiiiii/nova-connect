@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import { z } from 'zod';
 import { messageController } from '../controllers/message.controller.js';
@@ -13,8 +14,9 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, callback) => callback(null, allowedTypes.has(file.mimetype)),
 });
+const attachmentLimiter = rateLimit({ windowMs: 60 * 60 * 1000, limit: 30, standardHeaders: 'draft-7', legacyHeaders: false });
 router.use(authenticate);
-router.post('/:userId/attachments', upload.single('file'), validate(z.object({
+router.post('/:userId/attachments', attachmentLimiter, upload.single('file'), validate(z.object({
   body: z.object({ caption: z.string().max(4000).optional(), replyToId: z.string().uuid().optional() }).passthrough(),
   params: z.object({ userId: z.string().uuid() }),
   query: z.any(),

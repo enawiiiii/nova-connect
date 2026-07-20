@@ -13,7 +13,7 @@ export const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  crossOriginResourcePolicy: { policy: 'same-origin' },
   contentSecurityPolicy: {
     directives: {
       imgSrc: ["'self'", 'data:', 'https:'],
@@ -23,6 +23,7 @@ app.use(helmet({
   },
 }));
 app.use(cors({ origin: isLocalDevelopment ? true : env.CLIENT_URL.split(',').map((value) => value.trim()), credentials: true }));
+app.use('/api/v1/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 app.use(express.json({ limit: '32kb' }));
 app.use(cookieParser());
 app.use('/api/v1/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 50, standardHeaders: 'draft-7', legacyHeaders: false }));
@@ -46,7 +47,7 @@ if (env.NODE_ENV === 'production') {
     },
   }));
   app.use((req, res, next) => {
-    if (req.method === 'GET' && req.accepts('html')) {
+    if (req.method === 'GET' && !req.path.startsWith('/api/') && req.accepts('html')) {
       res.setHeader('Cache-Control', 'no-store');
       return res.sendFile(path.join(webDirectory, 'index.html'));
     }

@@ -169,10 +169,11 @@ export const authService = {
       const verification = await requireDeliveredVerification(user, await createVerification(user));
       return { user: mapUser(user as unknown as Record<string, unknown>, true), requiresEmailVerification: true as const, ...verification };
     }
-    const [{ data: existingEmail }, { data: existingUsername }] = await Promise.all([
+    const [{ data: existingEmail }, { data: usernameCandidates }] = await Promise.all([
       db.from('users').select('*').eq('email', email).maybeSingle(),
-      db.from('users').select('id').eq('username', username).maybeSingle(),
+      db.from('users').select('id,username').ilike('username', username).limit(10),
     ]);
+    const existingUsername = (usernameCandidates ?? []).find((candidate) => candidate.username.toLowerCase() === username.toLowerCase());
     if (existingEmail?.email_verified || (existingUsername && existingUsername.id !== existingEmail?.id)) {
       throw new AppError(409, 'Email or username is already in use', 'ACCOUNT_EXISTS');
     }
@@ -234,7 +235,7 @@ export const authService = {
     if (isLocalDevelopment) {
       const tokenHash = hashToken(refreshToken);
       const now = new Date().toISOString();
-      const token = await localDb.read((state) => state.refreshTokens.find((item) => item.token_hash === tokenHash && (!item.revoked_at || item.revoked_at > now) && item.expires_at > now));
+      const token = await localDb.read((state) => state.refreshTokens.find((item) => item.token_hash === tokenHash && !item.revoked_at && item.expires_at > now));
       if (!token) throw new AppError(401, 'Refresh token is invalid or expired', 'INVALID_REFRESH_TOKEN');
       const user = await localDb.read((state) => state.users.find((item) => item.id === token.user_id));
       if (!user) throw new AppError(401, 'Refresh token is invalid or expired', 'INVALID_REFRESH_TOKEN');
@@ -252,7 +253,7 @@ export const authService = {
       return { accessToken: signAccessToken(user), refreshToken, expiresAt };
     }
     const now = new Date().toISOString();
-    const { data } = await db.from('refresh_tokens').select('*, users(id,email,username,email_verified)').eq('token_hash', hashToken(refreshToken)).or(`revoked_at.is.null,revoked_at.gt.${now}`).gt('expires_at', now).maybeSingle();
+    const { data } = await db.from('refresh_tokens').select('*, users(id,email,username,email_verified)').eq('token_hash', hashToken(refreshToken)).is('revoked_at', null).gt('expires_at', now).maybeSingle();
     if (!data?.users) throw new AppError(401, 'Refresh token is invalid or expired', 'INVALID_REFRESH_TOKEN');
     const storedUser = data.users as unknown as { id: string; email: string; username: string; email_verified: boolean };
     if (env.REQUIRE_EMAIL_VERIFICATION && !storedUser.email_verified) throw new AppError(403, 'Verify your email before signing in', 'EMAIL_NOT_VERIFIED');
@@ -340,20 +341,34 @@ export const authService = {
     if (error || !count) throw new AppError(404, 'Session not found', 'SESSION_NOT_FOUND');
   },
 
-  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+  async changePassword(userId: string, currentPassword: string, newPassword: string, currentRefreshToken?: string) {
     const passwordHash = await bcrypt.hash(newPassword, env.BCRYPT_ROUNDS);
+    const currentTokenHash = currentRefreshToken ? hashToken(currentRefreshToken) : null;
     if (isLocalDevelopment) return localDb.mutate(async (state) => {
       const user = state.users.find((item) => item.id === userId);
       if (!user || !(await bcrypt.compare(currentPassword, user.password_hash))) throw new AppError(401, 'Current password is incorrect', 'INVALID_CURRENT_PASSWORD');
       user.password_hash = passwordHash;
+      const now = new Date().toISOString();
+      state.refreshTokens
+        .filter((item) => item.user_id === userId && !item.revoked_at && item.token_hash !== currentTokenHash)
+        .forEach((item) => { item.revoked_at = now; });
     });
     const { data: user } = await db.from('users').select('password_hash').eq('id', userId).single();
     if (!user || !(await bcrypt.compare(currentPassword, user.password_hash))) throw new AppError(401, 'Current password is incorrect', 'INVALID_CURRENT_PASSWORD');
     const { error } = await db.from('users').update({ password_hash: passwordHash }).eq('id', userId);
     if (error) throw new AppError(500, 'Could not change password', 'PASSWORD_CHANGE_FAILED');
+    let revokeQuery = db.from('refresh_tokens').update({ revoked_at: new Date().toISOString() }).eq('user_id', userId).is('revoked_at', null);
+    if (currentTokenHash) revokeQuery = revokeQuery.neq('token_hash', currentTokenHash);
+    const { error: revokeError } = await revokeQuery;
+    if (revokeError) throw new AppError(500, 'Password changed but other sessions could not be revoked', 'SESSION_REVOKE_FAILED');
   },
 
   async setupTotp(userId: string) {
+    const existing = isLocalDevelopment
+      ? await localDb.read((state) => state.users.find((item) => item.id === userId))
+      : (await db.from('users').select('email,totp_enabled').eq('id', userId).maybeSingle()).data;
+    if (!existing) throw new AppError(404, 'User not found', 'USER_NOT_FOUND');
+    if (existing.totp_enabled) throw new AppError(409, 'Disable two-factor authentication before setting up a new authenticator', 'TWO_FACTOR_ALREADY_ENABLED');
     const secret = generateSecret();
     const email = isLocalDevelopment
       ? await localDb.mutate((state) => {
@@ -428,11 +443,21 @@ export const authService = {
       });
       return;
     }
-    const { data: reset } = await db.from('password_reset_tokens').select('id,user_id').eq('token_hash', tokenHash).is('used_at', null).gt('expires_at', now).maybeSingle();
-    if (!reset) throw new AppError(400, 'Password reset link is invalid or expired', 'INVALID_PASSWORD_RESET');
+    const { data: candidate } = await db.from('password_reset_tokens').select('id,user_id').eq('token_hash', tokenHash).is('used_at', null).gt('expires_at', now).maybeSingle();
+    if (!candidate) throw new AppError(400, 'Password reset link is invalid or expired', 'INVALID_PASSWORD_RESET');
+    const { data: reset, error: consumeError } = await db.from('password_reset_tokens')
+      .update({ used_at: now })
+      .eq('id', candidate.id)
+      .is('used_at', null)
+      .select('id,user_id')
+      .maybeSingle();
+    if (consumeError || !reset) throw new AppError(400, 'Password reset link is invalid or expired', 'INVALID_PASSWORD_RESET');
     const passwordHash = await bcrypt.hash(newPassword, env.BCRYPT_ROUNDS);
     const { error } = await db.from('users').update({ password_hash: passwordHash }).eq('id', reset.user_id);
-    if (error) throw new AppError(500, 'Could not reset password', 'PASSWORD_RESET_FAILED');
+    if (error) {
+      await db.from('password_reset_tokens').update({ used_at: null }).eq('id', reset.id);
+      throw new AppError(500, 'Could not reset password', 'PASSWORD_RESET_FAILED');
+    }
     await Promise.all([
       db.from('password_reset_tokens').update({ used_at: now }).eq('user_id', reset.user_id).is('used_at', null),
       db.from('refresh_tokens').update({ revoked_at: now }).eq('user_id', reset.user_id).is('revoked_at', null),

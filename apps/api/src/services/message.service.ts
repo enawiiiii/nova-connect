@@ -13,6 +13,23 @@ function localMessageRow(message: LocalMessage) {
   return { ...message, reactions: message.reactions ?? [] } as unknown as Record<string, unknown>;
 }
 
+function hasBytes(buffer: Buffer, bytes: number[], offset = 0) {
+  return bytes.every((byte, index) => buffer[offset + index] === byte);
+}
+
+function fileContentMatchesMime(file: Express.Multer.File) {
+  const { buffer, mimetype } = file;
+  if (mimetype === 'image/jpeg') return hasBytes(buffer, [0xff, 0xd8, 0xff]);
+  if (mimetype === 'image/png') return hasBytes(buffer, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (mimetype === 'image/webp') return buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP';
+  if (mimetype === 'image/gif') return ['GIF87a', 'GIF89a'].includes(buffer.subarray(0, 6).toString('ascii'));
+  if (mimetype === 'application/pdf') return buffer.subarray(0, 1024).includes(Buffer.from('%PDF-'));
+  if (mimetype === 'audio/webm') return hasBytes(buffer, [0x1a, 0x45, 0xdf, 0xa3]);
+  if (mimetype === 'audio/mp4') return buffer.subarray(4, 8).toString('ascii') === 'ftyp';
+  if (mimetype === 'audio/mpeg') return buffer.subarray(0, 3).toString('ascii') === 'ID3' || (buffer[0] === 0xff && (buffer[1]! & 0xe0) === 0xe0);
+  return false;
+}
+
 async function mapPrivateMessage(row: Record<string, unknown>) {
   const message = mapMessage(row);
   if (!message.attachmentUrl || message.deletedAt) return message;
@@ -54,7 +71,14 @@ export const messageService = {
   async sendAttachment(senderId: string, receiverId: string, file: Express.Multer.File | undefined, caption = '', replyToId?: string | null) {
     if (await privacyService.isBlocked(senderId, receiverId)) throw new AppError(403, 'Messaging is blocked', 'USER_BLOCKED');
     if (!file) throw new AppError(422, 'Choose a file to send', 'FILE_REQUIRED');
+    if (!fileContentMatchesMime(file)) throw new AppError(422, 'File contents do not match the selected file type', 'INVALID_FILE_CONTENT');
     if (!(await friendService.areFriends(senderId, receiverId))) throw new AppError(403, 'Messaging is limited to friends', 'NOT_FRIENDS');
+    if (replyToId) {
+      const replyExists = isLocalDevelopment
+        ? await localDb.read((state) => state.messages.some((message) => message.id === replyToId && [senderId, receiverId].includes(message.sender_id) && [senderId, receiverId].includes(message.receiver_id)))
+        : Boolean((await db.from('messages').select('id').eq('id', replyToId).or(`and(sender_id.eq.${senderId},receiver_id.eq.${receiverId}),and(sender_id.eq.${receiverId},receiver_id.eq.${senderId})`).maybeSingle()).data);
+      if (!replyExists) throw new AppError(422, 'Reply target is not in this conversation', 'INVALID_REPLY_TARGET');
+    }
     const image = file.mimetype.startsWith('image/');
     const audio = file.mimetype.startsWith('audio/');
     const messageType = image ? 'image' : audio ? 'audio' : 'file';

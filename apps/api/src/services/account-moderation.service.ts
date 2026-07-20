@@ -36,7 +36,8 @@ export const accountModerationService = {
         .eq('details->>targetUserId', userId)
         .order('created_at', { ascending: false })
         .limit(20);
-      value = error ? { suspendedUntil: null } : stateFromEvents((data ?? []) as Array<{ details: Record<string, unknown> | null; created_at: string }>);
+      if (error) throw new AppError(503, 'Could not verify account access', 'ACCOUNT_ACCESS_CHECK_FAILED');
+      value = stateFromEvents((data ?? []) as Array<{ details: Record<string, unknown> | null; created_at: string }>);
     }
     stateCache.set(userId, { value, expiresAt: Date.now() + 30_000 });
     return value;

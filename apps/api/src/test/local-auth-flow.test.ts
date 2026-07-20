@@ -102,6 +102,31 @@ describe('local account flow', () => {
     const missingCookie = await request(app).post('/api/v1/auth/refresh');
     expect(missingCookie.status).toBe(401);
     expect(missingCookie.body.error.code).toBe('MISSING_REFRESH_TOKEN');
+
+    const otherDevice = request.agent(app);
+    expect((await otherDevice.post('/api/v1/auth/login').send({
+      email: `local.${suffix}@example.com`,
+      password: 'StrongPass123',
+    })).status).toBe(200);
+    const changedPassword = await agent.post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ currentPassword: 'StrongPass123', newPassword: 'ChangedPass456' });
+    expect(changedPassword.status).toBe(204);
+    expect((await agent.post('/api/v1/auth/refresh')).status).toBe(200);
+    expect((await otherDevice.post('/api/v1/auth/refresh')).status).toBe(401);
+
+    const [{ localDb }, { authService }] = await Promise.all([
+      import('../database/local.database.js'),
+      import('../services/auth.service.js'),
+    ]);
+    await localDb.mutate((state) => {
+      const user = state.users.find((item) => item.email === `local.${suffix}@example.com`)!;
+      user.totp_enabled = true;
+      user.totp_secret = 'JBSWY3DPEHPK3PXP';
+    });
+    await expect(authService.setupTotp(login.body.data.user.id)).rejects.toMatchObject<Partial<AppError>>({
+      code: 'TWO_FACTOR_ALREADY_ENABLED',
+    });
   });
 
   it('returns a useful password validation error', async () => {

@@ -85,6 +85,12 @@ describe('authenticated realtime flow', () => {
     expect(friends.body.data[0]).toMatchObject({ id: second.id });
     expect(friends.body.data[0].email).toBeUndefined();
 
+    const spoofedAttachment = await first.agent.post(`/api/v1/messages/${second.id}/attachments`)
+      .set(auth(first.accessToken))
+      .attach('file', Buffer.from('<script>alert(1)</script>'), { filename: 'photo.png', contentType: 'image/png' });
+    expect(spoofedAttachment.status).toBe(422);
+    expect(spoofedAttachment.body.error.code).toBe('INVALID_FILE_CONTENT');
+
     const thirdRequest = await second.agent.post('/api/v1/friends/requests').set(auth(second.accessToken)).send({ receiverId: third.id });
     expect(thirdRequest.status).toBe(201);
     const thirdIncomingRequests = await third.agent.get('/api/v1/friends/requests').set(auth(third.accessToken));

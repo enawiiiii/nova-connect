@@ -48,6 +48,12 @@ export const userService = {
       if (input.status !== undefined) user.status = input.status as typeof user.status;
       return mapUser(user as unknown as Record<string, unknown>);
     });
+    if (input.username) {
+      const { data: candidates } = await db.from('users').select('id,username').ilike('username', input.username).limit(10);
+      if ((candidates ?? []).some((item) => item.id !== id && item.username.toLowerCase() === input.username!.toLowerCase())) {
+        throw new AppError(409, 'Username is already in use', 'USERNAME_EXISTS');
+      }
+    }
     const { data, error } = await db.from('users').update(input).eq('id', id).select('*').single();
     if (error || !data) throw new AppError(400, 'Could not update profile', 'PROFILE_UPDATE_FAILED');
     return mapUser(data);
@@ -134,15 +140,24 @@ export const userService = {
   },
 
   async exportAccount(id: string) {
-    if (isLocalDevelopment) return localDb.read((state) => ({
+    if (isLocalDevelopment) return localDb.read((state) => {
+      const user = state.users.find((item) => item.id === id);
+      const profile = user ? {
+        id: user.id, username: user.username, email: user.email, avatar: user.avatar, bio: user.bio,
+        status: user.status, last_seen: user.last_seen, email_verified: user.email_verified,
+        created_at: user.created_at, show_last_seen: user.show_last_seen, show_avatar: user.show_avatar,
+        allow_friend_requests: user.allow_friend_requests,
+      } : null;
+      return {
       exportedAt: new Date().toISOString(),
-      profile: state.users.find((item) => item.id === id),
+      profile,
       friends: state.friends.filter((item) => item.requester_id === id || item.receiver_id === id),
       messages: state.messages.filter((item) => item.sender_id === id || item.receiver_id === id),
       calls: state.calls.filter((item) => item.caller_id === id || item.receiver_id === id || item.participant_ids.includes(id)),
       groups: state.groups.filter((group) => state.groupMembers.some((member) => member.group_id === group.id && member.user_id === id)),
       groupMessages: state.groupMessages.filter((item) => item.sender_id === id),
-    }));
+    };
+    });
     const [profile, friends, sentMessages, receivedMessages, calls, memberships, groupMessages] = await Promise.all([
       db.from('users').select('id,username,email,avatar,bio,status,last_seen,email_verified,created_at,show_last_seen,show_avatar,allow_friend_requests').eq('id', id).single(),
       db.from('friends').select('*').or(`requester_id.eq.${id},receiver_id.eq.${id}`),
