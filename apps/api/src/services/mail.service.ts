@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import https from 'node:https';
 import { env } from '../config/env.js';
 
 const mailTimeoutMs = 12_000;
@@ -56,28 +57,55 @@ function brevoErrorCode(status: number, details: string): MailDeliveryErrorCode 
 }
 
 async function brevoRequest(payload: Record<string, unknown>) {
+  const body = JSON.stringify(payload);
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    let response: Response;
+    let response: { ok: boolean; status: number; details: string };
     try {
-      response = await fetch('https://api.brevo.com/v3/smtp/email', {
-        method: 'POST',
-        signal: AbortSignal.timeout(mailTimeoutMs),
-        headers: {
-          'api-key': env.BREVO_API_KEY!,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+      if (attempt === 0) {
+        const fetchResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+          method: 'POST',
+          signal: AbortSignal.timeout(mailTimeoutMs),
+          headers: {
+            'api-key': env.BREVO_API_KEY!,
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body,
+        });
+        response = { ok: fetchResponse.ok, status: fetchResponse.status, details: (await fetchResponse.text()).slice(0, 500) };
+      } else {
+        response = await new Promise((resolve, reject) => {
+          const request = https.request('https://api.brevo.com/v3/smtp/email', {
+            method: 'POST',
+            family: 4,
+            headers: {
+              'api-key': env.BREVO_API_KEY!,
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+              'Content-Length': Buffer.byteLength(body),
+            },
+          }, (incoming) => {
+            let details = '';
+            incoming.setEncoding('utf8');
+            incoming.on('data', (chunk: string) => { if (details.length < 500) details += chunk; });
+            incoming.on('end', () => {
+              const status = incoming.statusCode ?? 503;
+              resolve({ ok: status >= 200 && status < 300, status, details: details.slice(0, 500) });
+            });
+          });
+          request.setTimeout(mailTimeoutMs, () => request.destroy(new Error('Brevo IPv4 request timed out')));
+          request.on('error', reject);
+          request.end(body);
+        });
+      }
     } catch (error) {
       if (attempt === 0) continue;
       throw new MailDeliveryError('EMAIL_PROVIDER_UNAVAILABLE', `Brevo request failed: ${error instanceof Error ? error.message : 'network error'}`);
     }
     if (response.ok) return true;
-    const details = (await response.text()).slice(0, 500);
-    const code = brevoErrorCode(response.status, details);
+    const code = brevoErrorCode(response.status, response.details);
     if (attempt === 0 && (response.status === 429 || response.status >= 500)) continue;
-    throw new MailDeliveryError(code, `Brevo email request failed (${response.status}): ${details}`, response.status);
+    throw new MailDeliveryError(code, `Brevo email request failed (${response.status}): ${response.details}`, response.status);
   }
   throw new MailDeliveryError('EMAIL_PROVIDER_UNAVAILABLE', 'Brevo email request failed');
 }
