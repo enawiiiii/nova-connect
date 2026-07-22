@@ -153,8 +153,9 @@ Never expose `SUPABASE_SERVICE_ROLE_KEY` as a `VITE_` variable or commit it. RLS
 | `COOKIE_SECURE` | Production | Set to `true` behind HTTPS |
 | `COOKIE_SAME_SITE` | No | Keep `lax` for the recommended same-origin Render deployment |
 | `REQUIRE_EMAIL_VERIFICATION` | No | Set to `false` only for temporary testing; defaults to `true` |
-| `MAIL_TRANSPORT` | Recommended | Use `brevo` on Render Free, or `smtp` only on hosts that permit outbound SMTP |
-| `BREVO_API_KEY` | Recommended on Render Free | Sends verification mail over HTTPS because free Render services block SMTP ports |
+| `MAIL_TRANSPORT` | Recommended | Use `gmail-api` on Render Free, or `smtp` only on hosts that permit outbound SMTP |
+| `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, `GMAIL_REFRESH_TOKEN`, `GMAIL_SENDER` | Recommended on Render Free | Sends mail from Gmail over HTTPS without blocked SMTP ports |
+| `BREVO_API_KEY` | Legacy alternative | Optional Brevo HTTPS transport retained only for migration compatibility |
 | `SMTP_*` | Alternative | SMTP fallback for hosting plans that allow outbound SMTP |
 | `TURN_URL` / `TURN_SECRET` | Recommended for production | Comma-separated Coturn URLs and REST secret used to issue time-limited relay credentials |
 | `TURN_USERNAME` / `TURN_CREDENTIAL` | Alternative to `TURN_SECRET` | Static credentials supplied by a hosted TURN provider |
@@ -167,7 +168,7 @@ Generate signing secrets with a password manager or `openssl rand -base64 48`.
 
 ## Email and Google sign-in
 
-Email verification is fully wired but can be bypassed temporarily with `REQUIRE_EMAIL_VERIFICATION=false`. On Render Free, set `MAIL_TRANSPORT=brevo` and add `BREVO_API_KEY` before turning verification back on. On other hosts or paid Render plans, SMTP remains available as a fallback. Without either provider, development prints the verification code to the API console.
+Email verification is fully wired but can be bypassed temporarily with `REQUIRE_EMAIL_VERIFICATION=false`. On Render Free, set `MAIL_TRANSPORT=gmail-api` and configure the four Gmail OAuth variables before turning verification back on. On other hosts or paid Render plans, SMTP remains available as a fallback. Without a configured provider, development prints the verification code to the API console.
 
 Google OAuth is intentionally feature-flagged off in the web UI. Before enabling it, configure Google as a Supabase Auth provider and add a server-side callback that exchanges the provider identity for a NOVA session. Do not turn on `VITE_GOOGLE_AUTH_ENABLED` until that callback is configured.
 
@@ -191,7 +192,7 @@ npm run lint
 1. Push the repository to a Git provider supported by Render.
 2. Apply every Supabase migration in numeric order before deploying the matching application release.
 3. In Render, choose **New → Blueprint** and select the repository. `render.yaml` creates one Node service named `nova-connect`.
-4. Enter the requested Supabase, Brevo (or SMTP), and optional TURN secrets.
+4. Enter the requested Supabase, Gmail API (or SMTP), and optional TURN secrets.
 5. Set both `CLIENT_URL` and `APP_URL` to the service's exact public URL, such as `https://nova-connect.onrender.com`, then deploy.
 
 The API serves the built PWA in production, so REST, cookies, Socket.IO, and WebRTC signaling share one origin. This avoids third-party-cookie failures on Safari and iPhone. Render supplies managed HTTPS and the health check remains `/health`.
@@ -200,7 +201,7 @@ The API serves the built PWA in production, so REST, cookies, Socket.IO, and Web
 
 - Replace both JWT secrets and keep them in Render secret storage.
 - Set `COOKIE_SECURE=true`.
-- Configure Brevo on Render Free (or SMTP on a paid host) and test verification links against the production web origin.
+- Configure Gmail API on Render Free (or SMTP on a paid host) and test verification codes against the production web origin.
 - Add Coturn with a server-side REST secret and test calls between Wi-Fi and mobile data.
 - Use a paid Render instance or equivalent for reliable always-on Socket.IO connections.
 - Configure external uptime monitoring and automated Supabase backups; the built-in admin page already records client and API errors.

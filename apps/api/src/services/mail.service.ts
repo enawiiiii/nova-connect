@@ -56,6 +56,88 @@ function brevoErrorCode(status: number, details: string): MailDeliveryErrorCode 
   return 'EMAIL_DELIVERY_REJECTED';
 }
 
+function gmailErrorCode(status: number): MailDeliveryErrorCode {
+  if (status === 400 || status === 401 || status === 403) return 'EMAIL_PROVIDER_AUTH_FAILED';
+  if (status === 429) return 'EMAIL_PROVIDER_LIMIT';
+  if (status >= 500) return 'EMAIL_PROVIDER_UNAVAILABLE';
+  return 'EMAIL_DELIVERY_REJECTED';
+}
+
+async function gmailAccessToken() {
+  let response: Response;
+  try {
+    response = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      signal: AbortSignal.timeout(mailTimeoutMs),
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: env.GMAIL_CLIENT_ID!,
+        client_secret: env.GMAIL_CLIENT_SECRET!,
+        refresh_token: env.GMAIL_REFRESH_TOKEN!,
+        grant_type: 'refresh_token',
+      }),
+    });
+  } catch (error) {
+    throw new MailDeliveryError('EMAIL_PROVIDER_UNAVAILABLE', `Google OAuth request failed: ${error instanceof Error ? error.message : 'network error'}`);
+  }
+  const details = (await response.text()).slice(0, 1000);
+  if (!response.ok) throw new MailDeliveryError(gmailErrorCode(response.status), `Google OAuth request failed (${response.status}): ${details}`, response.status);
+  const payload = JSON.parse(details) as { access_token?: string };
+  if (!payload.access_token) throw new MailDeliveryError('EMAIL_PROVIDER_AUTH_FAILED', 'Google OAuth response did not include an access token');
+  return payload.access_token;
+}
+
+function encodeHeader(value: string) {
+  return `=?UTF-8?B?${Buffer.from(value.replace(/[\r\n]/g, ' '), 'utf8').toString('base64')}?=`;
+}
+
+function gmailRawMessage(to: string, subject: string, text: string, html: string) {
+  const boundary = 'nova-connect-mail-boundary';
+  const from = sender();
+  const lines = [
+    `From: ${encodeHeader(from.name)} <${env.GMAIL_SENDER}>`,
+    `To: ${to.replace(/[\r\n]/g, '')}`,
+    `Subject: ${encodeHeader(subject)}`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    Buffer.from(text, 'utf8').toString('base64'),
+    `--${boundary}`,
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    Buffer.from(html, 'utf8').toString('base64'),
+    `--${boundary}--`,
+    '',
+  ];
+  return Buffer.from(lines.join('\r\n'), 'utf8').toString('base64url');
+}
+
+async function sendWithGmailApi(email: string, subject: string, text: string, html: string) {
+  const accessToken = await gmailAccessToken();
+  let response: Response;
+  try {
+    response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      signal: AbortSignal.timeout(mailTimeoutMs),
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ raw: gmailRawMessage(email, subject, text, html) }),
+    });
+  } catch (error) {
+    throw new MailDeliveryError('EMAIL_PROVIDER_UNAVAILABLE', `Gmail API request failed: ${error instanceof Error ? error.message : 'network error'}`);
+  }
+  if (response.ok) return true;
+  const details = (await response.text()).slice(0, 500);
+  throw new MailDeliveryError(gmailErrorCode(response.status), `Gmail API request failed (${response.status}): ${details}`, response.status);
+}
+
 async function brevoRequest(payload: Record<string, unknown>) {
   const body = JSON.stringify(payload);
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -146,7 +228,10 @@ async function sendWithSmtp(email: string, username: string, code: string) {
 
 export async function sendVerificationEmail(email: string, username: string, code: string) {
   const hasSmtp = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
-  const selectedTransport = env.MAIL_TRANSPORT ?? (env.BREVO_API_KEY ? 'brevo' : 'smtp');
+  const hasGmailApi = Boolean(env.GMAIL_CLIENT_ID && env.GMAIL_CLIENT_SECRET && env.GMAIL_REFRESH_TOKEN && env.GMAIL_SENDER);
+  const selectedTransport = env.MAIL_TRANSPORT ?? (hasGmailApi ? 'gmail-api' : env.BREVO_API_KEY ? 'brevo' : 'smtp');
+  const content = verificationEmailContent(username, code);
+  if (selectedTransport === 'gmail-api' && hasGmailApi) return sendWithGmailApi(email, content.subject, content.text, content.html);
   if (selectedTransport === 'brevo' && env.BREVO_API_KEY) return sendWithBrevo(email, username, code);
   if (!hasSmtp) {
     if (env.NODE_ENV !== 'production') console.info(`[mail:dev] Verification code for ${email}: ${code}`);
@@ -167,14 +252,19 @@ export function passwordResetUrl(token: string) {
 export async function sendPasswordResetEmail(email: string, username: string, token: string) {
   const resetUrl = passwordResetUrl(token);
   const hasSmtp = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
-  const selectedTransport = env.MAIL_TRANSPORT ?? (env.BREVO_API_KEY ? 'brevo' : 'smtp');
+  const hasGmailApi = Boolean(env.GMAIL_CLIENT_ID && env.GMAIL_CLIENT_SECRET && env.GMAIL_REFRESH_TOKEN && env.GMAIL_SENDER);
+  const selectedTransport = env.MAIL_TRANSPORT ?? (hasGmailApi ? 'gmail-api' : env.BREVO_API_KEY ? 'brevo' : 'smtp');
+  const subject = 'Reset your NOVA Connect password';
+  const text = `Hi ${username}, reset your password: ${resetUrl}. This link expires in one hour.`;
+  const html = `<p>Hi ${username},</p><p><a href="${resetUrl}">Reset your NOVA Connect password</a>. This link expires in one hour.</p>`;
+  if (selectedTransport === 'gmail-api' && hasGmailApi) return sendWithGmailApi(email, subject, text, html);
   if (selectedTransport === 'brevo' && env.BREVO_API_KEY) {
     return brevoRequest({
       sender: sender(),
       to: [{ email, name: username }],
-      subject: 'Reset your NOVA Connect password',
-      textContent: `Hi ${username}, reset your password: ${resetUrl}. This link expires in one hour.`,
-      htmlContent: `<p>Hi ${username},</p><p><a href="${resetUrl}">Reset your NOVA Connect password</a>. This link expires in one hour.</p>`,
+      subject,
+      textContent: text,
+      htmlContent: html,
       tags: ['password-reset'],
     });
   }
@@ -195,9 +285,9 @@ export async function sendPasswordResetEmail(email: string, username: string, to
   await transport.sendMail({
     from: env.MAIL_FROM,
     to: email,
-    subject: 'Reset your NOVA Connect password',
-    text: `Hi ${username}, reset your password: ${resetUrl}. This link expires in one hour.`,
-    html: `<p>Hi ${username},</p><p><a href="${resetUrl}">Reset your NOVA Connect password</a>. This link expires in one hour.</p>`,
+    subject,
+    text,
+    html,
   });
   return true;
 }

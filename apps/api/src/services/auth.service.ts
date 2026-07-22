@@ -118,11 +118,11 @@ async function removePendingUser(userId: string) {
 
 function deliveryError(code: MailDeliveryErrorCode | undefined) {
   const messages: Record<MailDeliveryErrorCode, string> = {
-    EMAIL_PROVIDER_AUTH_FAILED: 'مفتاح Brevo غير صالح أو لا يملك صلاحية إرسال البريد.',
-    EMAIL_SENDER_REJECTED: 'عنوان المرسل غير معتمد في Brevo. تحقق من المرسل MAIL_FROM.',
+    EMAIL_PROVIDER_AUTH_FAILED: 'بيانات اعتماد مزود البريد غير صالحة أو انتهت صلاحيتها.',
+    EMAIL_SENDER_REJECTED: 'عنوان المرسل غير معتمد لدى مزود البريد. تحقق من إعدادات المرسل.',
     EMAIL_PROVIDER_LIMIT: 'تم بلوغ حد إرسال البريد مؤقتًا. حاول مرة أخرى بعد قليل.',
     EMAIL_PROVIDER_UNAVAILABLE: 'خدمة إرسال البريد غير متاحة الآن. حاول مرة أخرى بعد قليل.',
-    EMAIL_DELIVERY_REJECTED: 'رفض مزود البريد إرسال الرمز. تحقق من إعدادات Brevo والمرسل.',
+    EMAIL_DELIVERY_REJECTED: 'رفض مزود البريد إرسال الرمز. تحقق من إعدادات الحساب والمرسل.',
   };
   const safeCode = code ?? 'EMAIL_PROVIDER_UNAVAILABLE';
   return new AppError(503, messages[safeCode], safeCode);

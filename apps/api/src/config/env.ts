@@ -29,7 +29,11 @@ const schema = z.object({
   VAPID_PRIVATE_KEY: z.string().optional(),
   VAPID_SUBJECT: z.string().default('mailto:connextnova@gmail.com'),
   BREVO_API_KEY: z.string().optional(),
-  MAIL_TRANSPORT: z.enum(['smtp', 'brevo']).optional(),
+  MAIL_TRANSPORT: z.enum(['smtp', 'brevo', 'gmail-api']).optional(),
+  GMAIL_CLIENT_ID: z.string().optional(),
+  GMAIL_CLIENT_SECRET: z.string().optional(),
+  GMAIL_REFRESH_TOKEN: z.string().optional(),
+  GMAIL_SENDER: z.string().email().optional(),
   SMTP_HOST: z.string().optional(),
   SMTP_PORT: z.coerce.number().default(587),
   SMTP_USER: z.string().optional(),
@@ -57,11 +61,13 @@ if (env.NODE_ENV === 'production') {
   if (env.COOKIE_SAME_SITE === 'none' && !env.COOKIE_SECURE) throw new Error('SameSite=None cookies must be secure');
   if (!env.CLIENT_URL.split(',').every((origin) => origin.trim().startsWith('https://'))) throw new Error('CLIENT_URL must use HTTPS in production');
   const hasSmtp = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
-  if (env.REQUIRE_EMAIL_VERIFICATION && !env.BREVO_API_KEY && !hasSmtp) {
-    throw new Error('BREVO_API_KEY or SMTP credentials are required in production for email verification');
+  const hasGmailApi = Boolean(env.GMAIL_CLIENT_ID && env.GMAIL_CLIENT_SECRET && env.GMAIL_REFRESH_TOKEN && env.GMAIL_SENDER);
+  if (env.REQUIRE_EMAIL_VERIFICATION && !env.BREVO_API_KEY && !hasSmtp && !hasGmailApi) {
+    throw new Error('Gmail API, Brevo, or SMTP credentials are required in production for email verification');
   }
   if (env.MAIL_TRANSPORT === 'smtp' && !hasSmtp) throw new Error('MAIL_TRANSPORT=smtp requires SMTP credentials');
   if (env.MAIL_TRANSPORT === 'brevo' && !env.BREVO_API_KEY) throw new Error('MAIL_TRANSPORT=brevo requires BREVO_API_KEY');
+  if (env.MAIL_TRANSPORT === 'gmail-api' && !hasGmailApi) throw new Error('MAIL_TRANSPORT=gmail-api requires Gmail OAuth credentials');
   if (env.TURN_URL && !env.TURN_SECRET && !(env.TURN_USERNAME && env.TURN_CREDENTIAL)) {
     throw new Error('TURN_URL requires TURN_SECRET or TURN_USERNAME and TURN_CREDENTIAL');
   }
