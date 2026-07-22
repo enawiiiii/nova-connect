@@ -145,6 +145,11 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 <h1>أدخل رمز التأكيد</h1>
                 <p>أرسلنا رمزًا من 6 أرقام إلى <strong>{verification.email}</strong>. الرمز صالح لمدة 15 دقيقة ولمرة واحدة فقط.</p>
               </div>
+              {verification.emailSent && (
+                <div className="verification-spam-note">
+                  لم تجد الرسالة؟ انتظر دقيقة ثم تحقق من مجلد <strong>الرسائل غير المرغوب فيها (Spam)</strong>.
+                </div>
+              )}
               {!verification.emailSent && verification.verificationCode && <div className="local-verification-note">رمز التجربة المحلية: <strong dir="ltr">{verification.verificationCode}</strong></div>}
               {!verification.emailSent && !verification.verificationCode && <div className="form-error">تعذر إرسال الرمز الآن. أعد المحاولة بعد قليل.</div>}
               <form className="verification-code-form" onSubmit={verifyEmail}>
