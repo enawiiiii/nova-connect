@@ -5,13 +5,18 @@ import path from 'node:path';
 
 const root = process.cwd();
 const packageJson = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
+const npmCli = process.env.npm_execpath;
+if (!npmCli) {
+  console.error('Run this command through npm: npm run package:sale');
+  process.exit(1);
+}
 const status = execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim();
 if (status) {
   console.error('Refusing to package a dirty worktree. Commit and verify the exact sale candidate first.');
   process.exit(1);
 }
 
-execFileSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'verify:sale'], { stdio: 'inherit' });
+execFileSync(process.execPath, [npmCli, 'run', 'verify:sale'], { stdio: 'inherit' });
 
 const commit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 const shortCommit = commit.slice(0, 12);
@@ -22,8 +27,7 @@ const archiveName = `nova-connect-${packageJson.version}-${shortCommit}.zip`;
 const archivePath = path.join(outputDirectory, archiveName);
 execFileSync('git', ['archive', '--format=zip', '--prefix=nova-connect/', `--output=${archivePath}`, 'HEAD']);
 
-const npmExecutable = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const sbom = execFileSync(npmExecutable, ['sbom', '--sbom-format', 'cyclonedx', '--omit', 'dev'], {
+const sbom = execFileSync(process.execPath, [npmCli, 'sbom', '--sbom-format', 'cyclonedx', '--omit', 'dev'], {
   encoding: 'utf8',
   maxBuffer: 100 * 1024 * 1024,
 });
