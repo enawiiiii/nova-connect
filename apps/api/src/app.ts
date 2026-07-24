@@ -13,6 +13,7 @@ export const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(helmet({
+  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
   crossOriginResourcePolicy: { policy: 'same-origin' },
   contentSecurityPolicy: {
     directives: {

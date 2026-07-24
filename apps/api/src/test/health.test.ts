@@ -8,6 +8,7 @@ describe('health endpoint', () => {
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ status: 'ok', service: 'nova-connect-api', release: 'persistent-session-v1' });
     expect(response.headers['content-security-policy']).toContain('https://accounts.google.com');
+    expect(response.headers['cross-origin-opener-policy']).toBe('same-origin-allow-popups');
   });
 
   it('returns a structured 404', async () => {

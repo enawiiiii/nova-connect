@@ -18,9 +18,8 @@ installGlobalErrorMonitoring();
 if (import.meta.env.DEV) {
   void navigator.serviceWorker?.getRegistrations().then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())));
 } else {
-  const updateSW = registerSW({
+  registerSW({
     immediate: true,
-    onNeedRefresh: () => { void updateSW(true); },
     onRegisteredSW: (_url, registration) => {
       if (!registration) return;
       const checkForUpdate = () => {

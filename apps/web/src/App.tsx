@@ -1,23 +1,24 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { AppShell } from './components/AppShell';
 import { ProtectedRoute } from './components/ProtectedRoute';
-import { AuthPage } from './pages/AuthPage';
-import { AdminPage } from './pages/AdminPage';
-import { CallPage } from './pages/CallPage';
-import { CallsPage } from './pages/CallsPage';
-import { ChatsPage } from './pages/ChatsPage';
-import { FriendsPage } from './pages/FriendsPage';
-import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
-import { LandingPage } from './pages/LandingPage';
-import { LegalPage } from './pages/LegalPage';
-import { NotFoundPage } from './pages/NotFoundPage';
-import { ProfilePage } from './pages/ProfilePage';
-import { SettingsPage } from './pages/SettingsPage';
-import { VerifyEmailPage } from './pages/VerifyEmailPage';
 import { useAuthStore } from './stores/auth.store';
 import { useNovaStore } from './stores/nova.store';
 import { SecureAccessBanner } from './components/SecureAccessBanner';
+
+const AppShell = lazy(() => import('./components/AppShell').then((module) => ({ default: module.AppShell })));
+const AuthPage = lazy(() => import('./pages/AuthPage').then((module) => ({ default: module.AuthPage })));
+const AdminPage = lazy(() => import('./pages/AdminPage').then((module) => ({ default: module.AdminPage })));
+const CallPage = lazy(() => import('./pages/CallPage').then((module) => ({ default: module.CallPage })));
+const CallsPage = lazy(() => import('./pages/CallsPage').then((module) => ({ default: module.CallsPage })));
+const ChatsPage = lazy(() => import('./pages/ChatsPage').then((module) => ({ default: module.ChatsPage })));
+const FriendsPage = lazy(() => import('./pages/FriendsPage').then((module) => ({ default: module.FriendsPage })));
+const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage').then((module) => ({ default: module.ForgotPasswordPage })));
+const LandingPage = lazy(() => import('./pages/LandingPage').then((module) => ({ default: module.LandingPage })));
+const LegalPage = lazy(() => import('./pages/LegalPage').then((module) => ({ default: module.LegalPage })));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((module) => ({ default: module.NotFoundPage })));
+const ProfilePage = lazy(() => import('./pages/ProfilePage').then((module) => ({ default: module.ProfilePage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((module) => ({ default: module.SettingsPage })));
+const VerifyEmailPage = lazy(() => import('./pages/VerifyEmailPage').then((module) => ({ default: module.VerifyEmailPage })));
 
 export default function App() {
   const bootstrap = useAuthStore((state) => state.bootstrap);
@@ -28,7 +29,7 @@ export default function App() {
     return () => window.removeEventListener('nova:session-ended', reset);
   }, []);
   return (
-    <><SecureAccessBanner /><Routes>
+    <><SecureAccessBanner /><Suspense fallback={<div className="route-loading" role="status"><i /><span>جارٍ تحميل NOVA…</span></div>}><Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<AuthPage mode="login" />} />
       <Route path="/register" element={<AuthPage mode="register" />} />
@@ -52,6 +53,6 @@ export default function App() {
         <Route path="/app/call/:type/:roomId" element={<CallPage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
-    </Routes></>
+    </Routes></Suspense></>
   );
 }

@@ -1,17 +1,3 @@
-self.addEventListener('activate', (event) => {
-  event.waitUntil((async () => {
-    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    await Promise.all(windows.map(async (client) => {
-      if (!('navigate' in client)) return;
-      try {
-        await client.navigate(client.url);
-      } catch {
-        // A closed or cross-origin window can disappear while the worker activates.
-      }
-    }));
-  })());
-});
-
 self.addEventListener('push', (event) => {
   let payload = {};
   try {
