@@ -39,11 +39,11 @@ services:
       - key: REQUIRE_EMAIL_VERIFICATION
         value: true
       - key: GOOGLE_AUTH_ENABLED
-        value: false
+        sync: false
       - key: GOOGLE_AUTH_CLIENT_ID
         sync: false
       - key: VITE_GOOGLE_AUTH_ENABLED
-        value: false
+        sync: false
       - key: VITE_GOOGLE_CLIENT_ID
         sync: false
       - key: MAIL_TRANSPORT
