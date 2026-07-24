@@ -23,10 +23,20 @@ support agreement says otherwise.
 - Keep production and staging in separate provider projects.
 - Apply database migrations in numeric order and take a verified backup before
   every production migration.
-- Run `npm run verify:sale`, `npm audit --omit=dev`, the full test suite, and a
+- Run `npm run verify:sale`, `npm run audit:production`, the full test suite, and a
   production build before creating a release.
 - Treat messages as encrypted in transit, not end-to-end encrypted, until a
   reviewed E2EE protocol is implemented.
+
+## Current dependency advisory exception
+
+`GHSA-qwww-vcr4-c8h2` was published on 2026-07-24 for React Router's unstable
+RSC APIs. NOVA is a client-rendered `BrowserRouter` application and does not
+import or enable those APIs, so this advisory is not reachable in the current
+architecture. `npm run audit:production` permits only this advisory and also
+fails if RSC markers are introduced. Remove the exception as soon as a patched
+stable React Router release is available. Any other production advisory fails
+the audit.
 
 ## Baseline
 

@@ -10,10 +10,11 @@
     "dev": "concurrently -n web,api -c cyan,magenta \"npm run dev -w @nova/web\" \"npm run dev -w @nova/api\"",
     "build": "npm run build -w @nova/shared && npm run build -w @nova/api && npm run build -w @nova/web",
     "test": "npm run test -w @nova/api && npm run test -w @nova/web",
-    "typecheck": "npm run typecheck -w @nova/api && npm run typecheck -w @nova/web",
+    "typecheck": "npm run build -w @nova/shared && npm run typecheck -w @nova/api && npm run typecheck -w @nova/web",
     "lint": "npm run lint -w @nova/api && npm run lint -w @nova/web",
     "setup": "node scripts/setup.mjs",
     "preflight:production": "node scripts/check-production-env.mjs",
+    "audit:production": "node scripts/audit-production.mjs",
     "audit:history": "node scripts/check-git-history.mjs",
     "verify:sale": "node scripts/check-sale-readiness.mjs",
     "package:sale": "node scripts/create-sale-package.mjs"
