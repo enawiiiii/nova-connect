@@ -20,7 +20,7 @@
     "package:sale": "node scripts/create-sale-package.mjs"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^10.0.3"
   },
   "engines": {
     "node": ">=22 <25"
