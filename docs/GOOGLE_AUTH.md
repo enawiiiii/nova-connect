@@ -18,7 +18,9 @@ verification emails.
    - `http://localhost:5173`
    - the buyer's staging HTTPS origin
    - the buyer's final production HTTPS origin
-5. Do not add a redirect URI for NOVA's popup flow.
+5. Add one **Authorized redirect URI** for every deployed environment:
+   - `https://nova-connect.onrender.com/api/v1/auth/google/redirect`
+   - replace the hostname with the buyer's final domain after transfer
 6. Copy the client ID ending in `.apps.googleusercontent.com`.
 
 Google's setup guide:
@@ -43,9 +45,12 @@ VITE_GOOGLE_AUTH_ENABLED=true
 VITE_GOOGLE_CLIENT_ID=123456789-example.apps.googleusercontent.com
 ```
 
-No Google client secret is required for this Google Identity Services popup
-flow. Render must perform a new build after changing the `VITE_` values because
-Vite embeds them into the web bundle at build time.
+No Google client secret is required. Production uses Google Identity Services'
+full-page redirect flow because it is reliable on iOS and ITP browsers; local
+development keeps the popup callback for convenience. The API verifies Google's
+double-submit CSRF token before accepting the ID token. Render must perform a
+new build after changing the `VITE_` values because Vite embeds them into the
+web bundle at build time.
 
 ## Account behavior
 
@@ -62,6 +67,6 @@ Vite embeds them into the web bundle at build time.
 
 ## Acceptance checks
 
-Test popup sign-in in Chrome, Safari/iPhone, and an incognito window. Confirm
+Test redirect sign-in in Chrome, Safari/iPhone, and an incognito window. Confirm
 new-account creation, returning login, logout, session refresh, a blocked
 account, and a Google account with NOVA two-factor authentication enabled.

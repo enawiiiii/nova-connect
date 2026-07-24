@@ -57,4 +57,33 @@ describe('Google authentication flow', () => {
     expect(second.body.data.user.id).toBe(first.body.data.user.id);
     expect(verifyGoogleCredentialMock).toHaveBeenCalledTimes(2);
   });
+
+  it('completes the secure Google redirect flow and returns to the app', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/google/redirect')
+      .set('Cookie', ['g_csrf_token=redirect-csrf-token'])
+      .type('form')
+      .send({
+        credential,
+        g_csrf_token: 'redirect-csrf-token',
+      });
+
+    expect(response.status).toBe(303);
+    expect(response.headers.location).toBe('http://localhost:5173/auth/google/callback?status=complete');
+    expect(response.headers['set-cookie']?.join(';')).toContain('nova_refresh=');
+  });
+
+  it('rejects a Google redirect when the double-submit CSRF token does not match', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/google/redirect')
+      .set('Cookie', ['g_csrf_token=cookie-token'])
+      .type('form')
+      .send({
+        credential,
+        g_csrf_token: 'different-token',
+      });
+
+    expect(response.status).toBe(303);
+    expect(response.headers.location).toBe('http://localhost:5173/auth/google/callback?error=GOOGLE_CSRF_INVALID');
+  });
 });

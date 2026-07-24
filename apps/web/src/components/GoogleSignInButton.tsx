@@ -7,8 +7,10 @@ interface GoogleCredentialResponse {
 interface GoogleIdApi {
   initialize: (options: {
     client_id: string;
-    callback: (response: GoogleCredentialResponse) => void;
-    ux_mode: 'popup';
+    callback?: (response: GoogleCredentialResponse) => void;
+    ux_mode: 'popup' | 'redirect';
+    login_uri?: string;
+    itp_support?: boolean;
   }) => void;
   renderButton: (parent: HTMLElement, options: {
     type: 'standard';
@@ -72,11 +74,13 @@ function loadGoogleIdentity() {
 export function GoogleSignInButton({
   clientId,
   mode,
+  redirectUri,
   onCredential,
   onError,
 }: {
   clientId: string;
   mode: 'login' | 'register';
+  redirectUri?: string;
   onCredential: (credential: string) => void;
   onError: (message: string) => void;
 }) {
@@ -94,10 +98,16 @@ export function GoogleSignInButton({
     void loadGoogleIdentity().then(() => {
       if (!active || !container.current || !window.google?.accounts.id) return;
       container.current.replaceChildren();
-      window.google.accounts.id.initialize({
+      window.google.accounts.id.initialize(redirectUri ? {
+        client_id: clientId,
+        ux_mode: 'redirect',
+        login_uri: redirectUri,
+        itp_support: true,
+      } : {
         client_id: clientId,
         ux_mode: 'popup',
         callback: (response) => credentialHandler.current(response.credential),
+        itp_support: true,
       });
       window.google.accounts.id.renderButton(container.current, {
         type: 'standard',
@@ -115,7 +125,7 @@ export function GoogleSignInButton({
       errorHandler.current('تعذر تحميل تسجيل الدخول عبر Google. تحقق من الاتصال ثم أعد المحاولة.');
     });
     return () => { active = false; };
-  }, [attempt, clientId, mode]);
+  }, [attempt, clientId, mode, redirectUri]);
 
   const retry = () => {
     googleScriptPromise = null;

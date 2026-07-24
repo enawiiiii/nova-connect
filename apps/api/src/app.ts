@@ -29,6 +29,7 @@ app.use(helmet({
 app.use(cors({ origin: isLocalDevelopment ? true : env.CLIENT_URL.split(',').map((value) => value.trim()), credentials: true }));
 app.use('/api/v1/auth', (_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); next(); });
 app.use(express.json({ limit: '32kb' }));
+app.use(express.urlencoded({ extended: false, limit: '16kb' }));
 app.use(cookieParser());
 app.use('/api/v1/auth', rateLimit({ windowMs: 15 * 60 * 1000, limit: 50, standardHeaders: 'draft-7', legacyHeaders: false }));
 app.use('/api', rateLimit({ windowMs: 60 * 1000, limit: 180, standardHeaders: 'draft-7', legacyHeaders: false }));

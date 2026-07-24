@@ -33,4 +33,35 @@ describe('GoogleSignInButton', () => {
     act(() => callback?.({ credential: 'signed-google-id-token' }));
     expect(onCredential).toHaveBeenCalledWith('signed-google-id-token');
   });
+
+  it('uses a full-page redirect when a production login endpoint is provided', async () => {
+    let initialization: {
+      ux_mode: 'popup' | 'redirect';
+      login_uri?: string;
+      callback?: (response: { credential: string }) => void;
+    } | undefined;
+    window.google = {
+      accounts: {
+        id: {
+          initialize: vi.fn((options) => { initialization = options; }),
+          renderButton: vi.fn((parent) => { parent.textContent = 'Continue with Google'; }),
+        },
+      },
+    };
+
+    render(
+      <GoogleSignInButton
+        clientId="123456789-nova-test.apps.googleusercontent.com"
+        mode="login"
+        redirectUri="https://example.com/api/v1/auth/google/redirect"
+        onCredential={vi.fn()}
+        onError={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByText('Continue with Google')).toBeInTheDocument());
+    expect(initialization?.ux_mode).toBe('redirect');
+    expect(initialization?.login_uri).toBe('https://example.com/api/v1/auth/google/redirect');
+    expect(initialization?.callback).toBeUndefined();
+  });
 });

@@ -229,6 +229,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             <GoogleSignInButton
               clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID!}
               mode={mode}
+              redirectUri={import.meta.env.PROD ? `${window.location.origin}/api/v1/auth/google/redirect` : undefined}
               onCredential={(credential) => void authenticateWithGoogle(credential)}
               onError={setError}
             />
