@@ -3,7 +3,7 @@ self.addEventListener('push', (event) => {
   try {
     payload = event.data ? event.data.json() : {};
   } catch {
-    payload = { title: 'NOVA Connect', body: event.data ? event.data.text() : 'لديك تحديث جديد' };
+    payload = { title: 'New notification', body: event.data ? event.data.text() : 'لديك تحديث جديد' };
   }
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -11,7 +11,7 @@ self.addEventListener('push', (event) => {
     if (payload.badge && self.registration.setAppBadge) {
       await self.registration.setAppBadge(payload.badge).catch(() => undefined);
     }
-    await self.registration.showNotification(payload.title || 'NOVA Connect', {
+    await self.registration.showNotification(payload.title || 'New notification', {
       body: payload.body || 'لديك تحديث جديد',
       icon: '/pwa-192.png',
       badge: '/pwa-192.png',

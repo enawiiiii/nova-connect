@@ -12,6 +12,8 @@ services:
         value: 24.18.0
       - key: NODE_ENV
         value: production
+      - key: PRODUCT_NAME
+        value: NOVA Connect
       - key: CLIENT_URL
         sync: false
       - key: APP_URL
@@ -27,7 +29,7 @@ services:
       - key: ACCESS_TOKEN_TTL
         value: 15m
       - key: REFRESH_TOKEN_DAYS
-        value: 400
+        sync: false
       - key: CALL_RECONNECT_GRACE_MS
         value: 12000
       - key: BCRYPT_ROUNDS
@@ -46,8 +48,28 @@ services:
         sync: false
       - key: VITE_GOOGLE_CLIENT_ID
         sync: false
+      - key: VITE_PRODUCT_NAME
+        value: NOVA Connect
+      - key: VITE_PRODUCT_SHORT_NAME
+        value: NOVA
+      - key: VITE_PRODUCT_MARK
+        value: N
+      - key: VITE_PRODUCT_TAGLINE
+        value: Stay in your orbit
+      - key: VITE_PRODUCT_DESCRIPTION
+        value: A private place for messages, calls, and the people who matter.
+      - key: VITE_LEGAL_NAME
+        sync: false
+      - key: VITE_LEGAL_EMAIL
+        sync: false
+      - key: VITE_SUPPORT_EMAIL
+        sync: false
+      - key: VITE_STATUS_URL
+        sync: false
+      - key: VITE_TERMS_EFFECTIVE_DATE
+        sync: false
       - key: MAIL_TRANSPORT
-        value: gmail-api
+        sync: false
       - key: GMAIL_CLIENT_ID
         sync: false
       - key: GMAIL_CLIENT_SECRET
@@ -67,8 +89,8 @@ services:
       - key: TURN_CREDENTIAL
         sync: false
       - key: VAPID_PUBLIC_KEY
-        value: BKfdmxVj3L9dWBJlEOl3uc4bt5JjmNLN1byeqZC8CdsL5PvOD6AosO-gBMyX3AM11K5sIySwbAh7EIa55Z1qsf4
+        sync: false
       - key: VAPID_PRIVATE_KEY
         sync: false
       - key: VAPID_SUBJECT
-        value: mailto:AHMADMOM247@GMAIL.COM
+        sync: false

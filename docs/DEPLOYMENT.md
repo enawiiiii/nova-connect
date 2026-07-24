@@ -9,13 +9,17 @@ credentials. Production user data must never be copied to development.
 ## Release procedure
 
 1. Confirm a clean worktree and a reviewed release commit.
-2. Run `npm ci`, `npm run verify:sale`, `npm run typecheck`, `npm run lint`,
-   `npm test`, `npm run build`, and `npm audit --omit=dev`.
+2. Run `npm ci`, `npm run verify:sale`, `npm run audit:history`,
+   `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`, and
+   `npm audit --omit=dev`.
 3. Take a database backup and verify its timestamp.
 4. Apply new Supabase migrations in numeric order.
 5. Deploy the application and wait for `/health` to return HTTP 200.
-6. Run the smoke tests listed below.
-7. Record the release in `CHANGELOG.md`.
+6. Run `npm run preflight:production` inside the production environment.
+7. Run the smoke tests listed below.
+8. Record the release in `CHANGELOG.md`.
+9. Tag the accepted commit. The tag workflow builds checksum-protected sale
+   artifacts.
 
 ## Smoke tests
 

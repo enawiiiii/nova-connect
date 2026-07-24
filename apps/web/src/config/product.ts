@@ -7,8 +7,8 @@ export const product = Object.freeze({
   shortName: productShortName,
   mark: configuredMark?.slice(0, 2).toUpperCase() || productShortName.slice(0, 1).toUpperCase(),
   legalName: import.meta.env.VITE_LEGAL_NAME?.trim() || productName,
-  legalEmail: import.meta.env.VITE_LEGAL_EMAIL?.trim() || 'novaconnect.verify@gmail.com',
-  supportEmail: import.meta.env.VITE_SUPPORT_EMAIL?.trim() || 'novaconnect.verify@gmail.com',
+  legalEmail: import.meta.env.VITE_LEGAL_EMAIL?.trim() || 'legal@example.com',
+  supportEmail: import.meta.env.VITE_SUPPORT_EMAIL?.trim() || 'support@example.com',
   statusUrl: import.meta.env.VITE_STATUS_URL?.trim() || '',
   termsEffectiveDate: import.meta.env.VITE_TERMS_EFFECTIVE_DATE?.trim() || '2026-07-24',
 });

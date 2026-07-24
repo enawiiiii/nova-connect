@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import type { PublicUser } from '@nova/shared';
 import { Brand } from '../components/Brand';
 import { GoogleSignInButton } from '../components/GoogleSignInButton';
+import { product } from '../config/product';
 import { api, ApiError } from '../lib/api';
 import { setLanguage } from '../lib/i18n';
 import { useAuthStore } from '../stores/auth.store';
@@ -92,7 +93,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
       }
       if (reason instanceof ApiError && reason.code === 'TWO_FACTOR_REQUIRED') setRequiresTwoFactor(true);
       if (!(reason instanceof ApiError && reason.code === 'EMAIL_NOT_VERIFIED')) {
-        setError(reason instanceof ApiError ? reason.message : 'Could not connect to NOVA. Please try again.');
+        setError(reason instanceof ApiError ? reason.message : `Could not connect to ${product.shortName}. Please try again.`);
       }
     } finally {
       setLoading(false);
@@ -150,10 +151,10 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     } catch (reason) {
       if (reason instanceof ApiError && reason.code === 'TWO_FACTOR_REQUIRED') {
         setGoogleCredential(credential);
-        setError('أدخل رمز المصادقة الثنائية الخاص بحساب NOVA لإكمال الدخول.');
+        setError(`أدخل رمز المصادقة الثنائية الخاص بحساب ${product.shortName} لإكمال الدخول.`);
       } else if (reason instanceof ApiError && reason.code === 'ACCOUNT_LINK_REQUIRED') {
         setGoogleCredential(null);
-        setError('يوجد حساب NOVA بهذا البريد. سجّل الدخول بكلمة المرور أولًا قبل ربط Google.');
+        setError(`يوجد حساب ${product.shortName} بهذا البريد. سجّل الدخول بكلمة المرور أولًا قبل ربط Google.`);
       } else {
         setGoogleCredential(null);
         setError(reason instanceof ApiError ? reason.message : 'تعذر تسجيل الدخول باستخدام Google.');
@@ -175,7 +176,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
 
   return (
     <div className="auth-page">
-      <aside className="auth-art"><div className="ambient ambient-one" /><Link className="back-link" to="/"><ArrowLeft /> Back home</Link><div className="auth-quote"><span><Sparkles /> PRIVATE CIRCLES</span><blockquote>“The best conversations don’t need an audience.”</blockquote><p>NOVA gives your closest friendships room to breathe.</p></div><div className="auth-orbit"><i /><i /><i /><span>N</span></div></aside>
+      <aside className="auth-art"><div className="ambient ambient-one" /><Link className="back-link" to="/"><ArrowLeft /> Back home</Link><div className="auth-quote"><span><Sparkles /> PRIVATE CIRCLES</span><blockquote>“The best conversations don’t need an audience.”</blockquote><p>{product.shortName} gives your closest friendships room to breathe.</p></div><div className="auth-orbit"><i /><i /><i /><span>{product.mark}</span></div></aside>
       <main className="auth-main">
         <header><Brand /><button className="lang-toggle" onClick={() => void setLanguage(i18n.language === 'ar' ? 'en' : 'ar')}><Globe2 />{i18n.language === 'ar' ? 'English' : 'العربية'}</button></header>
         <div className="auth-card">
@@ -234,7 +235,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           )}
           {googleEnabled && googleCredential && (
             <form className="google-two-factor" onSubmit={submitGoogleTotp}>
-              <label htmlFor="google-totp-code">رمز المصادقة الثنائية لحساب NOVA</label>
+              <label htmlFor="google-totp-code">رمز المصادقة الثنائية لحساب {product.shortName}</label>
               <input
                 id="google-totp-code"
                 required

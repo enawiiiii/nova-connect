@@ -8,7 +8,7 @@ const io = createSocketServer(httpServer);
 app.set('io', io);
 
 httpServer.listen(env.PORT, '0.0.0.0', () => {
-  console.info(`NOVA Connect API listening on port ${env.PORT}`);
+  console.info(`${env.PRODUCT_NAME} API listening on port ${env.PORT}`);
   if (isLocalDevelopment) console.info('Local development database is enabled');
 });
 

@@ -1,3 +1,5 @@
+import { product } from '../config/product';
+
 const API_URL = import.meta.env.DEV
   ? `${window.location.origin}/api/v1`
   : (import.meta.env.VITE_API_URL ?? `${window.location.origin}/api/v1`);
@@ -37,7 +39,7 @@ async function refreshAccessToken() {
     headers: { 'Content-Type': 'application/json' },
   }).then(async (response) => {
     if (response.status === 401 || response.status === 403) throw new ApiError(response.status, 'Your session has expired', 'SESSION_EXPIRED');
-    if (!response.ok) throw new ApiError(response.status, 'NOVA is reconnecting. Please try again.', 'AUTH_TEMPORARILY_UNAVAILABLE');
+    if (!response.ok) throw new ApiError(response.status, `${product.shortName} is reconnecting. Please try again.`, 'AUTH_TEMPORARILY_UNAVAILABLE');
     const payload = await response.json() as { data: { accessToken: string } };
     authCallbacks?.onAccessToken(payload.data.accessToken);
     return payload.data.accessToken;

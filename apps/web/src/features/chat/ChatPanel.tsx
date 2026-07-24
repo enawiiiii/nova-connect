@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Avatar } from '../../components/Avatar';
+import { product } from '../../config/product';
 import { api, ApiError } from '../../lib/api';
 import type { Friend } from '../../lib/demo-data';
 import { createId } from '../../lib/platform';
@@ -121,7 +122,7 @@ export function ChatPanel({ friend }: { friend: Friend }) {
       recorder.start();
       setRecording(true);
     } catch {
-      setMessageError('اسمح لـ NOVA باستخدام الميكروفون لتسجيل رسالة صوتية.');
+      setMessageError(`اسمح لـ ${product.shortName} باستخدام الميكروفون لتسجيل رسالة صوتية.`);
     }
   };
 
@@ -238,7 +239,7 @@ export function ChatPanel({ friend }: { friend: Friend }) {
         <div className="moderation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !moderationBusy) setModerationMode(null); }}>
           {moderationMode === 'report' ? (
             <form className="moderation-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="report-title" onSubmit={(event) => void reportFriend(event)}>
-              <header><span className="moderation-icon report"><ShieldAlert /></span><div><small>NOVA / SAFETY</small><h2 id="report-title">الإبلاغ عن {friend.username}</h2><p>أرسل التفاصيل لفريق الإدارة. لن يعرف المستخدم من أرسل البلاغ.</p></div><button type="button" className="moderation-close" disabled={moderationBusy} onClick={() => setModerationMode(null)} aria-label="إغلاق"><X /></button></header>
+              <header><span className="moderation-icon report"><ShieldAlert /></span><div><small>{product.shortName} / SAFETY</small><h2 id="report-title">الإبلاغ عن {friend.username}</h2><p>أرسل التفاصيل لفريق الإدارة. لن يعرف المستخدم من أرسل البلاغ.</p></div><button type="button" className="moderation-close" disabled={moderationBusy} onClick={() => setModerationMode(null)} aria-label="إغلاق"><X /></button></header>
               <label><span>سبب البلاغ</span><select value={reportReason} onChange={(event) => setReportReason(event.target.value as typeof reportReason)}><option value="harassment">مضايقة أو إساءة</option><option value="spam">رسائل مزعجة أو احتيال</option><option value="impersonation">انتحال شخصية</option><option value="unsafe">سلوك أو محتوى غير آمن</option><option value="other">سبب آخر</option></select></label>
               <label><span>التفاصيل</span><textarea autoFocus required minLength={3} maxLength={1000} value={reportDetails} onChange={(event) => setReportDetails(event.target.value)} placeholder="اشرح ما حدث بوضوح…" /><small>{reportDetails.length} / 1000</small></label>
               {moderationError && <div className="moderation-error" role="alert">{moderationError}</div>}
@@ -246,7 +247,7 @@ export function ChatPanel({ friend }: { friend: Friend }) {
             </form>
           ) : (
             <section className="moderation-dialog glass-panel block-dialog" role="dialog" aria-modal="true" aria-labelledby="block-title">
-              <header><span className="moderation-icon block"><Ban /></span><div><small>NOVA / PRIVACY</small><h2 id="block-title">حظر {friend.username}؟</h2><p>هذا الإجراء يحمي مساحتك ويمكنك إلغاء الحظر لاحقاً من الإعدادات.</p></div><button type="button" className="moderation-close" disabled={moderationBusy} onClick={() => setModerationMode(null)} aria-label="إغلاق"><X /></button></header>
+              <header><span className="moderation-icon block"><Ban /></span><div><small>{product.shortName} / PRIVACY</small><h2 id="block-title">حظر {friend.username}؟</h2><p>هذا الإجراء يحمي مساحتك ويمكنك إلغاء الحظر لاحقاً من الإعدادات.</p></div><button type="button" className="moderation-close" disabled={moderationBusy} onClick={() => setModerationMode(null)} aria-label="إغلاق"><X /></button></header>
               <div className="block-effects"><span>سيتم حذف الصداقة الحالية</span><span>ستتوقف الرسائل والمكالمات بينكما</span><span>لن يتم إشعار المستخدم بالحظر</span></div>
               {moderationError && <div className="moderation-error" role="alert">{moderationError}</div>}
               <footer><button type="button" className="button button-ghost" disabled={moderationBusy} onClick={() => setModerationMode(null)}>إلغاء</button><button type="button" className="button moderation-danger" disabled={moderationBusy} onClick={() => void blockFriend()}>{moderationBusy ? 'جارٍ الحظر…' : 'حظر المستخدم'}</button></footer>

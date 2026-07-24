@@ -522,7 +522,7 @@ export const authService = {
       })
       : (await db.from('users').update({ totp_secret: secret, totp_enabled: false }).eq('id', userId).select('email').single()).data?.email;
     if (!email) throw new AppError(404, 'User not found', 'USER_NOT_FOUND');
-    return { secret, uri: generateURI({ issuer: 'NOVA Connect', label: email, secret }) };
+    return { secret, uri: generateURI({ issuer: env.PRODUCT_NAME, label: email, secret }) };
   },
 
   async enableTotp(userId: string, code: string) {

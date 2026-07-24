@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Avatar } from '../components/Avatar';
+import { product } from '../config/product';
 import { ChatPanel } from '../features/chat/ChatPanel';
 import { GroupChatPanel } from '../features/chat/GroupChatPanel';
 import { useNovaStore } from '../stores/nova.store';
@@ -45,7 +46,7 @@ export function ChatsPage() {
   return (
     <div className="chats-layout">
       <aside className={`conversation-pane ${hasActive ? 'mobile-hidden' : ''}`}>
-        <div className="pane-title"><div><span>NOVA / INBOX</span><h1>{t('chats.title')}</h1><p>{t('chats.subtitle')}</p></div><button aria-label="إنشاء مجموعة" title="إنشاء مجموعة" onClick={() => setCreatingGroup(true)}><UsersRound /></button></div>
+        <div className="pane-title"><div><span>{product.shortName} / INBOX</span><h1>{t('chats.title')}</h1><p>{t('chats.subtitle')}</p></div><button aria-label="إنشاء مجموعة" title="إنشاء مجموعة" onClick={() => setCreatingGroup(true)}><UsersRound /></button></div>
         <label className="search-box"><Search /><input id="conversation-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('chats.search')} /></label>
         <div className="conversation-tabs"><button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All <span>{friends.length + groups.length}</span></button><button className={filter === 'unread' ? 'active' : ''} onClick={() => setFilter('unread')}>Unread <span>{friends.reduce((count, friend) => count + (friend.unread ? 1 : 0), 0)}</span></button></div>
         <div className="conversation-scroll">
@@ -56,7 +57,7 @@ export function ChatsPage() {
       </aside>
       <div className={`chat-stage ${hasActive ? 'mobile-active' : ''}`}>{active ? <ChatPanel friend={active} /> : activeGroup ? <GroupChatPanel group={activeGroup} /> : <div className="empty-chat"><div className="empty-orbit"><span><Sparkles /></span><i /><i /></div><h2>{t('chats.empty')}</h2><p>{t('chats.emptyBody')}</p><span className="secure-note">◈ Private by design</span></div>}</div>
 
-      {creatingGroup && <div className="group-picker-backdrop"><section className="group-picker glass-panel"><header><div><span>NOVA GROUP</span><h2>إنشاء مجموعة جديدة</h2><p>اختر اسمًا وأعضاء من أصدقائك.</p></div><button onClick={() => setCreatingGroup(false)}><X /></button></header><div className="group-creator-body"><input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="اسم المجموعة" maxLength={80} />{error && <div className="message-send-error">{error}</div>}<div className="group-friend-list">{friends.map((friend) => { const checked = selected.includes(friend.id); return <button className={checked ? 'selected' : ''} key={friend.id} onClick={() => setSelected((items) => checked ? items.filter((id) => id !== friend.id) : [...items, friend.id])}><Avatar user={friend} size="md" /><span className="group-friend-copy"><strong>{friend.username}</strong><small>{friend.status}</small></span><i>{checked && <Check />}</i></button>; })}</div></div><footer><button className="button button-ghost" onClick={() => setCreatingGroup(false)}>إلغاء</button><button className="button button-primary" disabled={saving || !groupName.trim() || !selected.length} onClick={() => void saveGroup()}><Edit3 />{saving ? 'جارٍ الإنشاء…' : 'إنشاء المجموعة'}</button></footer></section></div>}
+      {creatingGroup && <div className="group-picker-backdrop"><section className="group-picker glass-panel"><header><div><span>{product.shortName} GROUP</span><h2>إنشاء مجموعة جديدة</h2><p>اختر اسمًا وأعضاء من أصدقائك.</p></div><button onClick={() => setCreatingGroup(false)}><X /></button></header><div className="group-creator-body"><input value={groupName} onChange={(event) => setGroupName(event.target.value)} placeholder="اسم المجموعة" maxLength={80} />{error && <div className="message-send-error">{error}</div>}<div className="group-friend-list">{friends.map((friend) => { const checked = selected.includes(friend.id); return <button className={checked ? 'selected' : ''} key={friend.id} onClick={() => setSelected((items) => checked ? items.filter((id) => id !== friend.id) : [...items, friend.id])}><Avatar user={friend} size="md" /><span className="group-friend-copy"><strong>{friend.username}</strong><small>{friend.status}</small></span><i>{checked && <Check />}</i></button>; })}</div></div><footer><button className="button button-ghost" onClick={() => setCreatingGroup(false)}>إلغاء</button><button className="button button-primary" disabled={saving || !groupName.trim() || !selected.length} onClick={() => void saveGroup()}><Edit3 />{saving ? 'جارٍ الإنشاء…' : 'إنشاء المجموعة'}</button></footer></section></div>}
     </div>
   );
 }

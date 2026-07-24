@@ -1,12 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-process.env.CLIENT_URL = 'https://nova-connect.onrender.com';
+process.env.CLIENT_URL = 'https://app.example.com';
 process.env.MAIL_TRANSPORT = 'gmail-api';
 process.env.GMAIL_CLIENT_ID = 'gmail-client.apps.googleusercontent.com';
 process.env.GMAIL_CLIENT_SECRET = 'gmail-client-secret';
 process.env.GMAIL_REFRESH_TOKEN = 'gmail-refresh-token';
-process.env.GMAIL_SENDER = 'novaconnect.verify@gmail.com';
-process.env.MAIL_FROM = 'NOVA Connect <novaconnect.verify@gmail.com>';
+process.env.GMAIL_SENDER = 'sender@example.com';
+process.env.MAIL_FROM = 'NOVA Connect <sender@example.com>';
 
 const fetchMock = vi.fn();
 let sendVerificationEmail: typeof import('../services/mail.service.js').sendVerificationEmail;
@@ -39,7 +39,7 @@ describe('Gmail API delivery', () => {
     const payload = JSON.parse(sendRequest.body as string) as { raw: string };
     const mime = Buffer.from(payload.raw, 'base64url').toString('utf8');
     expect(mime).toContain('From:');
-    expect(mime).toContain('<novaconnect.verify@gmail.com>');
+    expect(mime).toContain('<sender@example.com>');
     expect(mime).toContain('To: person@gmail.com');
     expect(mime).not.toContain('gmail-client-secret');
     expect(mime).not.toContain('gmail-refresh-token');

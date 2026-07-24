@@ -1,5 +1,6 @@
 import { MailCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { product } from '../config/product';
 import { Brand } from '../components/Brand';
 
 export function VerifyEmailPage() {
@@ -9,7 +10,7 @@ export function VerifyEmailPage() {
       <div className="simple-card glass-panel">
         <MailCheck className="success" />
         <h1>التأكيد أصبح أكثر أمانًا</h1>
-        <p>يستخدم NOVA الآن رمزًا من 6 أرقام بدل روابط التأكيد. ارجع إلى تسجيل الدخول، ثم اطلب رمزًا جديدًا لبريدك.</p>
+        <p>يستخدم {product.shortName} الآن رمزًا من 6 أرقام بدل روابط التأكيد. ارجع إلى تسجيل الدخول، ثم اطلب رمزًا جديدًا لبريدك.</p>
         <Link className="button button-primary" to="/login">العودة إلى تسجيل الدخول</Link>
       </div>
     </div>

@@ -1,4 +1,4 @@
-import { isLocalDevelopment } from '../config/env.js';
+import { env, isLocalDevelopment } from '../config/env.js';
 import { localDb, type LocalReport, type LocalUser } from '../database/local.database.js';
 import { db } from '../database/supabase.js';
 import { AppError } from '../utils/errors.js';
@@ -258,7 +258,7 @@ export const reportModerationService = {
 
     let suspendedUntil: string | null = null;
     if (action === 'warn') {
-      await notificationService.create(before.reported_id, 'system', 'تنبيه من إدارة NOVA: وصلنا بلاغ متعلق بحسابك. يرجى الالتزام بقواعد السلامة واحترام المستخدمين.');
+      await notificationService.create(before.reported_id, 'system', `تنبيه من إدارة ${env.PRODUCT_NAME}: وصلنا بلاغ متعلق بحسابك. يرجى الالتزام بقواعد السلامة واحترام المستخدمين.`);
     } else if (action === 'protect_reporter') {
       await privacyService.block(before.reporter_id, before.reported_id);
     } else if (action === 'restore_contact') {
@@ -271,7 +271,7 @@ export const reportModerationService = {
       await accountModerationService.revokeSessions(before.reported_id);
       await notificationService.create(before.reported_id, 'system', `تم تعليق تسجيل الدخول إلى حسابك حتى ${new Date(suspendedUntil).toLocaleString('ar')}.`);
     } else if (action === 'restore_account') {
-      await notificationService.create(before.reported_id, 'system', 'تمت إعادة تفعيل إمكانية تسجيل الدخول إلى حسابك بواسطة إدارة NOVA.');
+      await notificationService.create(before.reported_id, 'system', `تمت إعادة تفعيل إمكانية تسجيل الدخول إلى حسابك بواسطة إدارة ${env.PRODUCT_NAME}.`);
     }
 
     await monitoringService.record({

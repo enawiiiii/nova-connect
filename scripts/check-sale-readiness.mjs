@@ -3,11 +3,17 @@ import { existsSync, readFileSync } from 'node:fs';
 
 const requiredFiles = [
   'LICENSE',
+  'THIRD_PARTY_NOTICES.md',
   'SECURITY.md',
   'CHANGELOG.md',
   'Dockerfile',
   '.env.example',
+  'apps/api/.env.example',
+  'apps/web/.env.example',
   'docs/SALE_HANDOFF.md',
+  'docs/BUYER_ACCEPTANCE.md',
+  'docs/BACKUP_RESTORE.md',
+  'docs/REBRANDING.md',
   'docs/DEPLOYMENT.md',
   'docs/NETWORKING.md',
   'docs/GOOGLE_AUTH.md',
@@ -38,6 +44,7 @@ const secretPatterns = [
   /sb_secret_[A-Za-z0-9_-]{20,}/,
   /GOCSPX-[A-Za-z0-9_-]{20,}/,
   /1\/\/[A-Za-z0-9_-]{30,}/,
+  /xkeysib-[A-Za-z0-9_-]{20,}/,
   /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
 ];
 const excluded = new Set(['scripts/check-sale-readiness.mjs', 'package-lock.json']);
@@ -53,6 +60,34 @@ const suspicious = repositoryFiles.filter((file) => {
 if (suspicious.length) {
   console.error(`Potential secrets found in repository files: ${suspicious.join(', ')}`);
   process.exit(1);
+}
+
+const personalMarkers = [
+  /AHMADMOM247@GMAIL\.COM/i,
+  /novaconnect\.verify@gmail\.com/i,
+  /connextnova@gmail\.com/i,
+];
+const personalized = repositoryFiles.filter((file) => {
+  if (excluded.has(file) || !existsSync(file)) return false;
+  try {
+    const contents = readFileSync(file, 'utf8');
+    return personalMarkers.some((pattern) => pattern.test(contents));
+  } catch {
+    return false;
+  }
+});
+if (personalized.length) {
+  console.error(`Seller-specific identities found in repository files: ${personalized.join(', ')}`);
+  process.exit(1);
+}
+
+const renderBlueprint = readFileSync('render.yaml', 'utf8');
+for (const transferableKey of ['REFRESH_TOKEN_DAYS', 'MAIL_TRANSPORT', 'VAPID_PUBLIC_KEY', 'VAPID_PRIVATE_KEY', 'VAPID_SUBJECT']) {
+  const block = new RegExp(`- key: ${transferableKey}\\r?\\n([\\s\\S]*?)(?=\\r?\\n\\s+- key:|$)`).exec(renderBlueprint)?.[1] ?? '';
+  if (!/sync:\s*false/.test(block)) {
+    console.error(`${transferableKey} must be supplied by the buyer in render.yaml`);
+    process.exit(1);
+  }
 }
 
 console.log('Sale-readiness repository checks passed.');

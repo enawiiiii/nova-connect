@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-process.env.CLIENT_URL = 'https://nova-connect.onrender.com';
+process.env.CLIENT_URL = 'https://app.example.com';
 process.env.BREVO_API_KEY = 'brevo-test-key';
-process.env.MAIL_FROM = 'NOVA Connect <novaconnect.verify@gmail.com>';
+process.env.MAIL_FROM = 'NOVA Connect <sender@example.com>';
 
 const fetchMock = vi.fn().mockResolvedValue(new Response(
   JSON.stringify({ messageId: '<verification@example.com>' }),
@@ -34,7 +34,7 @@ describe('verification email', () => {
       to: Array<{ email: string; name: string }>;
       htmlContent: string;
     };
-    expect(payload.sender).toEqual({ name: 'NOVA Connect', email: 'novaconnect.verify@gmail.com' });
+    expect(payload.sender).toEqual({ name: 'NOVA Connect', email: 'sender@example.com' });
     expect(payload.to).toEqual([{ email: 'person@example.com', name: 'NovaUser' }]);
     expect(payload.htmlContent).toContain('483920');
     expect(payload.htmlContent).toContain('15 دقيقة');

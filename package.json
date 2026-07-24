@@ -1,20 +1,31 @@
 {
   "name": "nova-connect",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "concurrently -n web,api -c cyan,magenta \"npm run dev -w @nova/web\" \"npm run dev -w @nova/api\"",
     "build": "npm run build -w @nova/shared && npm run build -w @nova/api && npm run build -w @nova/web",
     "test": "npm run test -w @nova/api && npm run test -w @nova/web",
     "typecheck": "npm run typecheck -w @nova/api && npm run typecheck -w @nova/web",
     "lint": "npm run lint -w @nova/api && npm run lint -w @nova/web",
-    "verify:sale": "node scripts/check-sale-readiness.mjs"
+    "setup": "node scripts/setup.mjs",
+    "preflight:production": "node scripts/check-production-env.mjs",
+    "audit:history": "node scripts/check-git-history.mjs",
+    "verify:sale": "node scripts/check-sale-readiness.mjs",
+    "package:sale": "node scripts/create-sale-package.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
   },
   "engines": {
     "node": ">=22 <25"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "esbuild@0.25.12": true
   }
 }

@@ -97,7 +97,7 @@ describe('local account flow', () => {
     expect(secondTabRefresh.body.data.accessToken).toBeTypeOf('string');
     const repeatedRefresh = await request(app).post('/api/v1/auth/refresh').set('Cookie', originalRefreshCookie!);
     expect(repeatedRefresh.status).toBe(200);
-    expect(repeatedRefresh.headers['set-cookie']?.[0]).toContain('Max-Age=34560000');
+    expect(repeatedRefresh.headers['set-cookie']?.[0]).toContain('Max-Age=2592000');
 
     const missingCookie = await request(app).post('/api/v1/auth/refresh');
     expect(missingCookie.status).toBe(401);

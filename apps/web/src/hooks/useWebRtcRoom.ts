@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { product } from '../config/product';
 import { api, leaveCallKeepalive } from '../lib/api';
 import { playHangupTone } from '../lib/call-sounds';
 import { getSocket } from '../lib/socket';
@@ -18,10 +19,10 @@ const fallbackIceServers: RTCIceServer[] = [
 ];
 
 function mediaErrorMessage(error: unknown) {
-  if (!window.isSecureContext) return 'يلزم فتح NOVA عبر رابط HTTPS آمن لاستخدام الكاميرا والميكروفون.';
+  if (!window.isSecureContext) return `يلزم فتح ${product.shortName} عبر رابط HTTPS آمن لاستخدام الكاميرا والميكروفون.`;
   if (!navigator.mediaDevices?.getUserMedia) return 'هذا المتصفح لا يدعم مكالمات الصوت والفيديو.';
   const name = error instanceof DOMException ? error.name : '';
-  if (name === 'NotAllowedError' || name === 'SecurityError') return 'اسمح لـ NOVA باستخدام الكاميرا والميكروفون من إعدادات المتصفح.';
+  if (name === 'NotAllowedError' || name === 'SecurityError') return `اسمح لـ ${product.shortName} باستخدام الكاميرا والميكروفون من إعدادات المتصفح.`;
   if (name === 'NotFoundError') return 'لم يتم العثور على كاميرا أو ميكروفون متاح.';
   if (name === 'NotReadableError') return 'الكاميرا أو الميكروفون مستخدمان من تطبيق آخر.';
   return 'تعذر تشغيل الكاميرا أو الميكروفون. تحقق من الأذونات وحاول مجددًا.';

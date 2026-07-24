@@ -4,6 +4,7 @@ import { type FormEvent, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Avatar } from '../components/Avatar';
 import { PageHeader } from '../components/PageHeader';
+import { product } from '../config/product';
 import { api } from '../lib/api';
 import { useAuthStore } from '../stores/auth.store';
 import { useNovaStore } from '../stores/nova.store';
@@ -105,7 +106,7 @@ export function ProfilePage() {
           <h2>{username}</h2>
           <p>@{username.toLowerCase()} · in your orbit</p>
           <blockquote>{bio || 'Add a little something about yourself.'}</blockquote>
-          <div className="profile-stats"><span><strong>{friends.length}</strong>Friends</span><span><strong>{calls.length}</strong>Calls</span><span><Sparkles />NOVA Member</span></div>
+          <div className="profile-stats"><span><strong>{friends.length}</strong>Friends</span><span><strong>{calls.length}</strong>Calls</span><span><Sparkles />{product.shortName} Member</span></div>
         </aside>
       </div>
     </div>

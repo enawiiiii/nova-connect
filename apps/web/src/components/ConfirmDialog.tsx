@@ -1,6 +1,7 @@
 import { AlertTriangle, X } from 'lucide-react';
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { product } from '../config/product';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -31,7 +32,7 @@ export function ConfirmDialog({ open, title, description, confirmLabel, loading 
   return createPortal(
     <div className="moderation-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !loading) onCancel(); }}>
       <section className="moderation-dialog glass-panel block-dialog" role="dialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
-        <header><span className="moderation-icon block"><AlertTriangle /></span><div><small>NOVA / CONFIRM</small><h2 id="confirm-dialog-title">{title}</h2><p>{description}</p></div><button type="button" className="moderation-close" disabled={loading} onClick={onCancel} aria-label="إغلاق"><X /></button></header>
+        <header><span className="moderation-icon block"><AlertTriangle /></span><div><small>{product.shortName} / CONFIRM</small><h2 id="confirm-dialog-title">{title}</h2><p>{description}</p></div><button type="button" className="moderation-close" disabled={loading} onClick={onCancel} aria-label="إغلاق"><X /></button></header>
         <footer><button type="button" className="button button-ghost" disabled={loading} onClick={onCancel}>إلغاء</button><button type="button" className="button moderation-danger" disabled={loading} onClick={onConfirm}>{loading ? 'جارٍ التنفيذ…' : confirmLabel}</button></footer>
       </section>
     </div>,

@@ -4,6 +4,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { useAuthStore } from './stores/auth.store';
 import { useNovaStore } from './stores/nova.store';
 import { SecureAccessBanner } from './components/SecureAccessBanner';
+import { product } from './config/product';
 
 const AppShell = lazy(() => import('./components/AppShell').then((module) => ({ default: module.AppShell })));
 const AuthPage = lazy(() => import('./pages/AuthPage').then((module) => ({ default: module.AuthPage })));
@@ -29,7 +30,7 @@ export default function App() {
     return () => window.removeEventListener('nova:session-ended', reset);
   }, []);
   return (
-    <><SecureAccessBanner /><Suspense fallback={<div className="route-loading" role="status"><i /><span>جارٍ تحميل NOVA…</span></div>}><Routes>
+    <><SecureAccessBanner /><Suspense fallback={<div className="route-loading" role="status"><i /><span>جارٍ تحميل {product.shortName}…</span></div>}><Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<AuthPage mode="login" />} />
       <Route path="/register" element={<AuthPage mode="register" />} />

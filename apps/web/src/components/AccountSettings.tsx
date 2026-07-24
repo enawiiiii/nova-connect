@@ -2,6 +2,7 @@ import { Download, Link2, QrCode, Share2, Trash2 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { product } from '../config/product';
 import { api } from '../lib/api';
 import { useAuthStore } from '../stores/auth.store';
 import { useNovaStore } from '../stores/nova.store';
@@ -51,7 +52,7 @@ export function AccountSettings() {
   };
 
   const shareInvite = async () => {
-    if (navigator.share) await navigator.share({ title: 'NOVA Connect', text: `انضم إليّ على NOVA باسم ${user?.username}`, url: inviteUrl });
+    if (navigator.share) await navigator.share({ title: product.name, text: `انضم إليّ على ${product.shortName} باسم ${user?.username}`, url: inviteUrl });
     else await copyInvite();
   };
 
@@ -61,7 +62,7 @@ export function AccountSettings() {
     const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `nova-account-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.download = `${product.shortName.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'account'}-account-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
     setMessage('تم تجهيز نسخة بياناتك.');
@@ -84,7 +85,7 @@ export function AccountSettings() {
       <section className="settings-group glass-panel account-settings">
         <div className="section-heading"><span>الدعوة والخصوصية</span></div>
         <div className="invite-card">
-          <div>{qr ? <img src={qr} alt="رمز QR لدعوة NOVA" /> : <QrCode />}</div>
+          <div>{qr ? <img src={qr} alt={`رمز QR لدعوة ${product.shortName}`} /> : <QrCode />}</div>
           <span><strong>دعوتك الشخصية</strong><small>{inviteUrl}</small></span>
           <button onClick={() => void copyInvite()}><Link2 />نسخ</button>
           <button onClick={() => void shareInvite()}><Share2 />مشاركة</button>

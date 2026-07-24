@@ -178,7 +178,7 @@ export function createSocketServer(httpServer: HttpServer) {
           io.to(`user:${parsed.data.receiverId}`).emit('call:incoming', { caller, roomId: parsed.data.roomId, type: parsed.data.type, group: false });
           void pushService.send(parsed.data.receiverId, {
             title: `مكالمة ${parsed.data.type === 'video' ? 'فيديو' : 'صوتية'} من ${user.username}`,
-            body: 'اضغط لفتح المكالمة في NOVA',
+            body: `اضغط لفتح المكالمة في ${env.PRODUCT_NAME}`,
             url: `/app/call/${parsed.data.type}/${parsed.data.roomId}?mode=individual`,
             tag: `call-${parsed.data.roomId}`,
             kind: 'call',

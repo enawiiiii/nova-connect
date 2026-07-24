@@ -8,8 +8,13 @@ This repository is prepared for sale as one complete product, not as a
 multi-tenant subscription service. Start with
 [`docs/SALE_HANDOFF.md`](docs/SALE_HANDOFF.md), then complete the
 [deployment](docs/DEPLOYMENT.md), [networking](docs/NETWORKING.md), and
-[legal](docs/LEGAL_CHECKLIST.md) checklists. The in-app brand and legal identity
-are configurable through `VITE_PRODUCT_*` and `VITE_LEGAL_*` values.
+[legal](docs/LEGAL_CHECKLIST.md) checklists. Rebranding, backup/restore, and
+formal acceptance are covered by
+[`docs/REBRANDING.md`](docs/REBRANDING.md),
+[`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md), and
+[`docs/BUYER_ACCEPTANCE.md`](docs/BUYER_ACCEPTANCE.md). The in-app brand and
+legal identity are configurable through `PRODUCT_NAME`, `VITE_PRODUCT_*`, and
+`VITE_LEGAL_*` values.
 
 ## What is included
 
@@ -57,37 +62,29 @@ The shared package keeps transport contracts reusable for a future React Native 
 
 ## Requirements
 
-- Node.js 22 or newer
+- Node.js 22 through 24
 - npm 10 or newer
 - A Supabase project
 - A modern browser with WebRTC support
 
 ## Local installation
 
-1. Install all workspace dependencies:
+1. Install the exact locked workspace dependencies:
 
    ```bash
-   npm install
+   npm ci
    ```
 
-2. Copy the root environment template and fill in real values:
+2. Create local API and web configuration. Existing files are never
+   overwritten, and signing secrets are generated locally:
 
    ```bash
-   cp .env.example .env
+   npm run setup
    ```
 
-   On Windows PowerShell:
-
-   ```powershell
-   Copy-Item .env.example .env
-   ```
-
-3. Optionally create `apps/web/.env.local` for browser-only development flags:
-
-   ```env
-   VITE_GOOGLE_AUTH_ENABLED=false
-   VITE_PUBLIC_HTTPS_URL=
-   ```
+3. Review `apps/api/.env` and `apps/web/.env.local`. The generated local setup
+   uses the JSON evaluation database and disables email verification. Add
+   buyer-owned provider credentials when testing live integrations.
 
 4. Start both applications:
 
@@ -175,6 +172,8 @@ Never expose `SUPABASE_SERVICE_ROLE_KEY` as a `VITE_` variable or commit it. RLS
 | `VAPID_SUBJECT` | No | Contact URI for Web Push, normally `mailto:owner@example.com` |
 | `VITE_API_URL` | Separate-origin only | Override the default same-origin API base |
 | `VITE_SOCKET_URL` | Separate-origin only | Override the default same-origin Socket.IO origin |
+| `VITE_PRODUCT_*` | Rebranding | Product name, short name, mark, tagline, and social/PWA description |
+| `VITE_LEGAL_*`, `VITE_SUPPORT_EMAIL` | Production | Buyer legal identity and monitored contacts |
 
 Generate signing secrets with a password manager or `openssl rand -base64 48`.
 
@@ -193,11 +192,20 @@ HTTPS is required for camera, microphone, screen sharing, service workers, and n
 ## Quality commands
 
 ```bash
+npm run verify:sale
+npm run audit:history
 npm run typecheck
 npm test
 npm run build
 npm run lint
+npm audit --omit=dev
 ```
+
+Inside a production shell, run `npm run preflight:production` to validate
+provider dependencies and secure runtime settings without printing secret
+values. After committing the accepted release, `npm run package:sale` creates a
+clean source archive without Git history, a CycloneDX SBOM, a dependency
+license inventory, checksums, and a release manifest under ignored `outputs/`.
 
 ## Deploying to Render
 
@@ -205,7 +213,8 @@ npm run lint
 2. Apply every Supabase migration in numeric order before deploying the matching application release.
 3. In Render, choose **New → Blueprint** and select the repository. `render.yaml` creates one Node service named `nova-connect`.
 4. Enter the requested Supabase, Gmail API (or SMTP), and optional TURN secrets.
-5. Set both `CLIENT_URL` and `APP_URL` to the service's exact public URL, such as `https://nova-connect.onrender.com`, then deploy.
+5. Set both `CLIENT_URL` and `APP_URL` to the service's exact buyer-owned HTTPS
+   URL, then deploy.
 
 The API serves the built PWA in production, so REST, cookies, Socket.IO, and WebRTC signaling share one origin. This avoids third-party-cookie failures on Safari and iPhone. Render supplies managed HTTPS and the health check remains `/health`.
 
@@ -219,6 +228,21 @@ The API serves the built PWA in production, so REST, cookies, Socket.IO, and Web
 - Configure external uptime monitoring and automated Supabase backups; the built-in admin page already records client and API errors.
 - Keep Helmet's Content Security Policy aligned with any future analytics/error-reporting domains.
 - Plan an E2E encryption protocol and key-verification UX before marketing messages as end-to-end encrypted. The current transport is HTTPS/WSS plus WebRTC DTLS-SRTP, and the code is structured to add message encryption later.
+
+## Explicit product limits
+
+- This release is a single deployable product, not a multi-tenant SaaS billing
+  platform; subscriptions and payment processing are not included.
+- Group WebRTC uses peer-to-peer mesh and is capped at eight participants. A
+  larger commercial audience requires an SFU and a corresponding privacy/cost
+  design.
+- Messages are encrypted in transit but are not end-to-end encrypted.
+- Render's free plan and consumer Gmail accounts provide no production SLA.
+  The buyer chooses and pays for production infrastructure.
+- Legal pages are operational templates and require buyer-specific legal
+  review.
+- Native iOS/Android binaries are not included; the shipped mobile experience
+  is an installable responsive PWA.
 
 ## Future mobile client
 

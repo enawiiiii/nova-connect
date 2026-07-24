@@ -18,7 +18,7 @@ interface AuthState {
 export const demoMe: PublicUser = {
   id: 'c55467b0-3e1b-4207-a030-d85896754151',
   username: 'Noor',
-  email: 'noor@novaconnect.app',
+  email: 'noor@example.com',
   avatar: null,
   bio: 'Product designer · night thinker · always one playlist away',
   status: 'online',

@@ -3,6 +3,10 @@
 This checklist is for transferring the complete NOVA Connect product to one
 buyer. It is not a substitute for a signed asset-purchase agreement.
 
+Complete the [rebranding](REBRANDING.md), [backup and restore](BACKUP_RESTORE.md),
+[legal](LEGAL_CHECKLIST.md), and [buyer acceptance](BUYER_ACCEPTANCE.md)
+documents as part of the handoff.
+
 ## Before signing
 
 - Confirm the seller owns the custom code, design assets, domain, and brand.
@@ -30,6 +34,9 @@ buyer. It is not a substitute for a signed asset-purchase agreement.
 8. Produce and test a database backup and restore.
 9. Record final provider ownership, billing owner, region, and renewal dates.
 10. Sign an acceptance record that names the deployed URL and release commit.
+11. Run `npm run package:sale` from the accepted clean commit and transfer the
+    source archive, SBOM, license inventory, checksums, and manifest through
+    buyer-controlled encrypted storage.
 
 ## Never transfer through chat
 

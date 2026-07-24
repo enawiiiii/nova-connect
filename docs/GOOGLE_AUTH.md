@@ -16,8 +16,8 @@ verification emails.
 3. Create a client with application type **Web application**.
 4. Add these **Authorized JavaScript origins**:
    - `http://localhost:5173`
-   - `https://nova-connect.onrender.com`
-   - the buyer's final HTTPS domain, when available
+   - the buyer's staging HTTPS origin
+   - the buyer's final production HTTPS origin
 5. Do not add a redirect URI for NOVA's popup flow.
 6. Copy the client ID ending in `.apps.googleusercontent.com`.
 
