@@ -8,7 +8,8 @@
     "build": "npm run build -w @nova/shared && npm run build -w @nova/api && npm run build -w @nova/web",
     "test": "npm run test -w @nova/api && npm run test -w @nova/web",
     "typecheck": "npm run typecheck -w @nova/api && npm run typecheck -w @nova/web",
-    "lint": "npm run lint -w @nova/api && npm run lint -w @nova/web"
+    "lint": "npm run lint -w @nova/api && npm run lint -w @nova/web",
+    "verify:sale": "node scripts/check-sale-readiness.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

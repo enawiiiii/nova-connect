@@ -7,5 +7,6 @@ coverage
 .DS_Store
 .vite
 .local
+.npm-cache
 outputs
 work

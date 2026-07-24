@@ -7,6 +7,7 @@ describe('health endpoint', () => {
     const response = await request(app).get('/health');
     expect(response.status).toBe(200);
     expect(response.body).toMatchObject({ status: 'ok', service: 'nova-connect-api', release: 'persistent-session-v1' });
+    expect(response.headers['content-security-policy']).toContain('https://accounts.google.com');
   });
 
   it('returns a structured 404', async () => {

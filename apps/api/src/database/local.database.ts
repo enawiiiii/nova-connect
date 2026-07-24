@@ -12,6 +12,7 @@ export interface LocalUser {
   status: 'online' | 'away' | 'busy' | 'offline';
   last_seen: string | null;
   email_verified: boolean;
+  google_subject?: string | null;
   totp_secret?: string | null;
   totp_enabled?: boolean;
   show_last_seen?: boolean;

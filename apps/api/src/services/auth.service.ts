@@ -9,9 +9,11 @@ import { mapUser } from '../utils/mappers.js';
 import { createOpaqueToken, hashToken, signAccessToken } from './token.service.js';
 import { MailDeliveryError, passwordResetUrl, sendPasswordResetEmail, sendVerificationEmail, type MailDeliveryErrorCode } from './mail.service.js';
 import { accountModerationService } from './account-moderation.service.js';
+import { verifyGoogleCredential } from './google-identity.service.js';
 
 interface Credentials { email: string; password: string; totpCode?: string }
 interface RegisterInput extends Credentials { username: string }
+interface GoogleCredentials { credential: string; totpCode?: string }
 interface SessionMeta { userAgent?: string; ip?: string }
 
 async function createSession(user: { id: string; email: string; username: string }, meta: SessionMeta = {}) {
@@ -137,6 +139,46 @@ async function requireDeliveredVerification(
   throw deliveryError(verification.emailErrorCode);
 }
 
+function googleUsernameBase(name: string | undefined, email: string) {
+  const source = (name?.trim() || email.split('@')[0] || 'nova_user')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Za-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_');
+  const base = source.length >= 3 ? source : 'nova_user';
+  return base.slice(0, 24);
+}
+
+function googleUsernameCandidate(base: string, subject: string, attempt: number) {
+  const stableSuffix = subject.replace(/[^A-Za-z0-9]/g, '').slice(-6) || 'google';
+  const suffix = attempt === 0 ? stableSuffix : `${stableSuffix}${attempt}`;
+  return `${base.slice(0, 31 - suffix.length)}_${suffix}`;
+}
+
+async function availableGoogleUsername(name: string | undefined, email: string, subject: string) {
+  const base = googleUsernameBase(name, email);
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = googleUsernameCandidate(base, subject, attempt);
+    const exists = isLocalDevelopment
+      ? await localDb.read((state) => state.users.some((user) => user.username.toLowerCase() === candidate.toLowerCase()))
+      : Boolean((await db.from('users').select('id').ilike('username', candidate).limit(1)).data?.length);
+    if (!exists) return candidate;
+  }
+  throw new AppError(409, 'Could not reserve a username for this Google account', 'USERNAME_UNAVAILABLE');
+}
+
+async function assertTotpIfEnabled(
+  user: { totp_enabled?: boolean; totp_secret?: string | null },
+  totpCode?: string,
+) {
+  if (!user.totp_enabled) return;
+  if (!totpCode) throw new AppError(401, 'Enter the six-digit authenticator code', 'TWO_FACTOR_REQUIRED');
+  if (!user.totp_secret || !(await verify({ secret: user.totp_secret, token: totpCode })).valid) {
+    throw new AppError(401, 'Authenticator code is invalid', 'INVALID_TWO_FACTOR_CODE');
+  }
+}
+
 export const authService = {
   async register(input: RegisterInput, meta: SessionMeta = {}) {
     const email = input.email.trim().toLowerCase();
@@ -228,6 +270,107 @@ export const authService = {
     await accountModerationService.assertCanAuthenticate(data.id);
     const session = await createSession({ id: data.id, email: data.email, username: data.username }, meta);
     return { user: mapUser(data, true), ...session };
+  },
+
+  async google(input: GoogleCredentials, meta: SessionMeta = {}) {
+    const identity = await verifyGoogleCredential(input.credential);
+    const googleCanAuthorizeEmail = identity.email.endsWith('@gmail.com') || Boolean(identity.hostedDomain);
+    let created = false;
+
+    if (isLocalDevelopment) {
+      let user = await localDb.read((state) => state.users.find((item) => item.google_subject === identity.subject));
+      if (!user) {
+        const existingEmail = await localDb.read((state) => state.users.find((item) => item.email === identity.email));
+        if (existingEmail) {
+          if (existingEmail.google_subject && existingEmail.google_subject !== identity.subject) {
+            throw new AppError(409, 'This email is linked to another Google account', 'GOOGLE_ACCOUNT_CONFLICT');
+          }
+          if (existingEmail.email_verified && !googleCanAuthorizeEmail) {
+            throw new AppError(409, 'Sign in with your password before linking this Google account', 'ACCOUNT_LINK_REQUIRED');
+          }
+          await localDb.mutate((state) => {
+            const stored = state.users.find((item) => item.id === existingEmail.id)!;
+            stored.google_subject = identity.subject;
+            stored.email_verified = true;
+            if (!stored.avatar && identity.picture) stored.avatar = identity.picture;
+          });
+          user = existingEmail;
+          user.google_subject = identity.subject;
+          user.email_verified = true;
+          if (!user.avatar && identity.picture) user.avatar = identity.picture;
+        } else {
+          const username = await availableGoogleUsername(identity.name, identity.email, identity.subject);
+          const createdAt = new Date().toISOString();
+          const passwordHash = await bcrypt.hash(crypto.randomBytes(64).toString('hex'), env.BCRYPT_ROUNDS);
+          user = {
+            id: crypto.randomUUID(),
+            username,
+            email: identity.email,
+            password_hash: passwordHash,
+            avatar: identity.picture ?? null,
+            bio: null,
+            status: 'offline',
+            last_seen: createdAt,
+            email_verified: true,
+            google_subject: identity.subject,
+            created_at: createdAt,
+          };
+          await localDb.mutate((state) => state.users.push(user!));
+          created = true;
+        }
+      }
+      await assertTotpIfEnabled(user, input.totpCode);
+      await accountModerationService.assertCanAuthenticate(user.id);
+      const session = await createSession(user, meta);
+      return { user: mapUser(user as unknown as Record<string, unknown>, true), created, ...session };
+    }
+
+    const googleLookup = await db.from('users').select('*').eq('google_subject', identity.subject).maybeSingle();
+    let user = googleLookup.data;
+    if (googleLookup.error) throw new AppError(500, 'Could not authenticate Google account', 'GOOGLE_AUTH_FAILED');
+    if (!user) {
+      const existingResult = await db.from('users').select('*').eq('email', identity.email).maybeSingle();
+      if (existingResult.error) throw new AppError(500, 'Could not authenticate Google account', 'GOOGLE_AUTH_FAILED');
+      const existingEmail = existingResult.data;
+      if (existingEmail) {
+        if (existingEmail.google_subject && existingEmail.google_subject !== identity.subject) {
+          throw new AppError(409, 'This email is linked to another Google account', 'GOOGLE_ACCOUNT_CONFLICT');
+        }
+        if (existingEmail.email_verified && !googleCanAuthorizeEmail) {
+          throw new AppError(409, 'Sign in with your password before linking this Google account', 'ACCOUNT_LINK_REQUIRED');
+        }
+        const updated = await db.from('users').update({
+          google_subject: identity.subject,
+          email_verified: true,
+          ...(!existingEmail.avatar && identity.picture ? { avatar: identity.picture } : {}),
+        }).eq('id', existingEmail.id).select('*').single();
+        if (updated.error || !updated.data) throw new AppError(500, 'Could not link Google account', 'GOOGLE_LINK_FAILED');
+        user = updated.data;
+      } else {
+        const username = await availableGoogleUsername(identity.name, identity.email, identity.subject);
+        const passwordHash = await bcrypt.hash(crypto.randomBytes(64).toString('hex'), env.BCRYPT_ROUNDS);
+        const inserted = await db.from('users').insert({
+          email: identity.email,
+          username,
+          password_hash: passwordHash,
+          email_verified: true,
+          google_subject: identity.subject,
+          avatar: identity.picture ?? null,
+        }).select('*').single();
+        if (inserted.error || !inserted.data) {
+          if (inserted.error?.code === '23505') {
+            throw new AppError(409, 'This Google account is already linked. Please try again.', 'GOOGLE_ACCOUNT_CONFLICT');
+          }
+          throw new AppError(500, 'Could not create Google account', 'ACCOUNT_CREATE_FAILED');
+        }
+        user = inserted.data;
+        created = true;
+      }
+    }
+    await assertTotpIfEnabled(user, input.totpCode);
+    await accountModerationService.assertCanAuthenticate(user.id);
+    const session = await createSession({ id: user.id, email: user.email, username: user.username }, meta);
+    return { user: mapUser(user, true), created, ...session };
   },
 
   async refresh(refreshToken?: string) {

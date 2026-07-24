@@ -13,6 +13,8 @@ import { accountModerationService } from '../services/account-moderation.service
 
 type Ack<T = unknown> = (response: { data?: T; error?: string }) => void;
 const activeConnections = new Map<string, number>();
+const callDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const callReconnectGraceMs = env.CALL_RECONNECT_GRACE_MS;
 const idSchema = z.string().uuid();
 const messageSchema = z.object({ receiverId: idSchema, text: z.string().trim().min(1).max(4000), replyToId: idSchema.nullable().optional() }).strict();
 const userTargetSchema = z.object({ receiverId: idSchema }).strict();
@@ -76,15 +78,17 @@ export function createSocketServer(httpServer: HttpServer) {
       current.count += 1;
       return current.count <= limit;
     };
-    const leaveCall = async (roomId: string, disconnecting = false) => {
-      const membership = joinedCalls.get(roomId);
-      if (!membership) return;
-      joinedCalls.delete(roomId);
+    const departureKey = (roomId: string) => `${roomId}:${user.id}`;
+    const cancelScheduledDeparture = (roomId: string) => {
+      const key = departureKey(roomId);
+      const timer = callDisconnectTimers.get(key);
+      if (timer) clearTimeout(timer);
+      callDisconnectTimers.delete(key);
+    };
+    const finalizeCallDeparture = async (roomId: string, membership: JoinedCall) => {
       const room = `call:${roomId}`;
-      if (!disconnecting) socket.leave(room);
-      const remainingSockets = (await io.in(room).fetchSockets()).filter((peer) => peer.id !== socket.id);
+      const remainingSockets = await io.in(room).fetchSockets();
       if (remainingSockets.some((peer) => (peer.data.user as TokenUser).id === user.id)) return;
-
       if (membership.mode === 'individual') {
         await callService.leaveRoom(user.id, roomId).catch((error) => console.error('Could not persist ended call', error));
         const ended = { userId: user.id, username: user.username, roomId };
@@ -93,6 +97,25 @@ export function createSocketServer(httpServer: HttpServer) {
       } else {
         io.to(room).emit('call:participant-left', { userId: user.id });
       }
+    };
+    const leaveCall = async (roomId: string, disconnecting = false) => {
+      const membership = joinedCalls.get(roomId);
+      if (!membership) return;
+      joinedCalls.delete(roomId);
+      const room = `call:${roomId}`;
+      if (!disconnecting) socket.leave(room);
+      const remainingSockets = (await io.in(room).fetchSockets()).filter((peer) => peer.id !== socket.id);
+      if (remainingSockets.some((peer) => (peer.data.user as TokenUser).id === user.id)) return;
+      cancelScheduledDeparture(roomId);
+      if (disconnecting) {
+        const key = departureKey(roomId);
+        callDisconnectTimers.set(key, setTimeout(() => {
+          callDisconnectTimers.delete(key);
+          void finalizeCallDeparture(roomId, membership);
+        }, callReconnectGraceMs));
+        return;
+      }
+      await finalizeCallDeparture(roomId, membership);
     };
     socket.join(userRoom);
     activeConnections.set(user.id, (activeConnections.get(user.id) ?? 0) + 1);
@@ -207,6 +230,7 @@ export function createSocketServer(httpServer: HttpServer) {
         const participants = [...new Set(sockets.map((peer) => (peer.data.user as TokenUser).id))];
         const limit = access.mode === 'group' ? 8 : 2;
         if (!participants.includes(user.id) && participants.length >= limit) throw new Error(`This call has reached its ${limit}-person limit`);
+        cancelScheduledDeparture(parsed.roomId);
         joinedCalls.set(parsed.roomId, { mode: access.mode, participantUserIds: access.participantUserIds });
         socket.join(room);
         socket.to(room).emit('call:participant-joined', { user });

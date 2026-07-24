@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { Avatar } from '../components/Avatar';
 import { Brand } from '../components/Brand';
+import { product } from '../config/product';
 import { setLanguage } from '../lib/i18n';
 import { demoFriends } from '../lib/demo-data';
 import { useAuthStore } from '../stores/auth.store';
@@ -21,7 +22,7 @@ export function LandingPage() {
         <div className="landing-actions">
           <button className="lang-toggle" onClick={() => void setLanguage(i18n.language === 'ar' ? 'en' : 'ar')}><Globe2 size={17} /> {i18n.language === 'ar' ? 'EN' : 'العربية'}</button>
           <Link to="/login" className="button button-ghost">Sign in</Link>
-          <Link to="/register" className="button button-primary">Get NOVA <ArrowRight size={17} /></Link>
+          <Link to="/register" className="button button-primary">Get {product.shortName} <ArrowRight size={17} /></Link>
         </div>
       </header>
 
@@ -32,12 +33,12 @@ export function LandingPage() {
             <h1>{t('landing.titleA')}<br /><span>{t('landing.titleB')}</span></h1>
             <p>{t('landing.body')}</p>
             <div className="hero-actions"><Link to="/register" className="button button-primary button-lg">{t('landing.primary')} <ArrowRight size={19} /></Link><button className="button button-ghost button-lg" onClick={preview}><span className="play-dot">▶</span>{t('landing.secondary')}</button></div>
-            <div className="hero-proof"><div className="proof-avatars">{demoFriends.slice(0, 4).map((friend) => <Avatar key={friend.id} user={friend} size="sm" />)}</div><div><span>Trusted by close circles everywhere</span><small><Check size={13} /> No ads. No noise. Just your people.</small></div></div>
+            <div className="hero-proof"><div className="proof-avatars">{demoFriends.slice(0, 4).map((friend) => <Avatar key={friend.id} user={friend} size="sm" />)}</div><div><span>Built for close circles everywhere</span><small><Check size={13} /> No ads. No noise. Just your people.</small></div></div>
           </div>
 
-          <div className="hero-product" aria-label="NOVA Connect product preview">
+          <div className="hero-product" aria-label={`${product.name} product preview`}>
             <div className="orbit-ring ring-one" /><div className="orbit-ring ring-two" />
-            <div className="floating-chip chip-lock"><LockKeyhole size={16} /><span>Private room<strong>End-to-end ready</strong></span></div>
+            <div className="floating-chip chip-lock"><LockKeyhole size={16} /><span>Private room<strong>Encrypted in transit</strong></span></div>
             <div className="floating-chip chip-live"><i /> 4 friends live</div>
             <div className="product-window glass-panel">
               <div className="window-bar"><Brand compact /><div className="window-search">⌘ K &nbsp; Search your orbit</div><Avatar user={{ ...demoFriends[0]!, username: 'Noor' }} size="sm" /></div>
@@ -50,13 +51,13 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section className="signal-strip" id="signal"><span>{t('landing.trusted')}</span><div><strong>2.4M+</strong><small>{t('landing.messages')}</small></div><div><strong>99.99%</strong><small>{t('landing.calls')}</small></div><div><strong>∞</strong><small>{t('landing.friends')}</small></div></section>
+        <section className="signal-strip" id="signal"><span>{t('landing.trusted')}</span><div><strong>1:1</strong><small>Direct voice and video</small></div><div><strong>8 MAX</strong><small>Small group rooms</small></div><div><strong>PWA</strong><small>Installable experience</small></div></section>
 
         <section className="feature-section" id="calling"><div className="section-intro"><span>BUILT FOR CLOSENESS</span><h2>Everything you need.<br />Nothing you don’t.</h2><p>Thoughtful communication tools without the crowded feeds, public metrics, or algorithmic noise.</p></div><div className="feature-grid"><article><div className="feature-icon"><MessageCircle /></div><h3>Conversations that flow</h3><p>Instant delivery, live typing, seen states, and presence that never gets in the way.</p><div className="mini-bubbles"><i>Tonight at 8?</i><b>Wouldn’t miss it ✨</b></div></article><article><div className="feature-icon mint"><Video /></div><h3>Calls that feel close</h3><p>Peer-to-peer voice and video, plus private rooms for up to eight friends.</p><div className="mini-call"><span>04:32</span><div>{demoFriends.slice(0, 3).map((friend) => <Avatar key={friend.id} user={friend} size="md" />)}</div></div></article><article id="privacy"><div className="feature-icon pink"><LockKeyhole /></div><h3>Privacy is the foundation</h3><p>Secure sessions, private data boundaries, and an architecture ready for E2E encryption.</p><div className="privacy-seal"><LockKeyhole /><span>Private by design<small>Your moments stay yours</small></span></div></article></div></section>
 
-        <section className="cta-section"><div><Sparkles /><h2>Your people are<br />one orbit away.</h2><p>Start a quieter, closer way to stay connected.</p><Link className="button button-primary button-lg" to="/register">Create your NOVA <ArrowRight /></Link><span><Download size={14} /> Installable on any device</span></div></section>
+        <section className="cta-section"><div><Sparkles /><h2>Your people are<br />one orbit away.</h2><p>Start a quieter, closer way to stay connected.</p><Link className="button button-primary button-lg" to="/register">Create your {product.shortName} <ArrowRight /></Link><span><Download size={14} /> Installable on any device</span></div></section>
       </main>
-      <footer><Brand /><span>© 2026 NOVA Connect. Private by design.</span><div><a href="#privacy">Privacy</a><a href="#">Terms</a><a href="#">Status</a></div></footer>
+      <footer><Brand /><span>© 2026 {product.legalName}. Private by design.</span><div><Link to="/privacy">Privacy</Link><Link to="/terms">Terms</Link><Link to="/acceptable-use">Safety</Link>{product.statusUrl && <a href={product.statusUrl} target="_blank" rel="noreferrer">Status</a>}</div></footer>
     </div>
   );
 }

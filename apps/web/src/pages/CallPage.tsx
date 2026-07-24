@@ -10,6 +10,7 @@ import { connectSocket } from '../lib/socket';
 import { useAuthStore } from '../stores/auth.store';
 import { useNovaStore } from '../stores/nova.store';
 import { secureVersionUrl } from '../lib/secure-url';
+import { product } from '../config/product';
 
 function RemoteVideo({ stream, username, speakerId }: { stream: MediaStream; username: string; speakerId: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -123,8 +124,8 @@ export function CallPage() {
       <div className="call-ambient" />
       <header>
         <div>
-          <span className="brand-orbit"><span>N</span><i /></span>
-          <span><strong>{isGroup ? 'NOVA Group Room' : 'NOVA Direct Call'}</strong><small><ShieldCheck />{isGroup ? 'مكالمة جماعية آمنة' : 'مكالمة فردية بين شخصين'}</small></span>
+          <span className="brand-orbit"><span>{product.mark}</span><i /></span>
+          <span><strong>{isGroup ? `${product.shortName} Group Room` : `${product.shortName} Direct Call`}</strong><small><ShieldCheck />{isGroup ? 'مكالمة جماعية آمنة' : 'مكالمة فردية بين شخصين'}</small></span>
         </div>
         <button className="room-code" onClick={() => void copyText(window.location.href)}>ROOM {roomId.slice(0, 6).toUpperCase()} <Copy /></button>
         <span className={`call-quality ${rtc.quality}`}><Wifi />{rtc.reconnecting ? 'إعادة اتصال…' : rtc.quality === 'excellent' ? 'ممتاز' : rtc.quality === 'good' ? 'جيد' : rtc.quality === 'poor' ? 'ضعيف' : 'يتصل'}</span>

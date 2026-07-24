@@ -2,6 +2,15 @@
 
 NOVA Connect is a private, bilingual communication platform for close friends. The MVP ships as an installable React PWA with realtime private messaging, a friend network, presence, web notifications, and peer-to-peer voice/video rooms for up to eight participants.
 
+## Commercial handoff
+
+This repository is prepared for sale as one complete product, not as a
+multi-tenant subscription service. Start with
+[`docs/SALE_HANDOFF.md`](docs/SALE_HANDOFF.md), then complete the
+[deployment](docs/DEPLOYMENT.md), [networking](docs/NETWORKING.md), and
+[legal](docs/LEGAL_CHECKLIST.md) checklists. The in-app brand and legal identity
+are configurable through `VITE_PRODUCT_*` and `VITE_LEGAL_*` values.
+
 ## What is included
 
 - Email registration, enforced verification, resend flow, login, interruption-safe refresh-token rotation, and logout
@@ -48,7 +57,7 @@ The shared package keeps transport contracts reusable for a future React Native 
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22 or newer
 - npm 10 or newer
 - A Supabase project
 - A modern browser with WebRTC support
@@ -120,6 +129,8 @@ Open the Supabase SQL editor and run these migrations in order:
 8. [`supabase/migrations/0008_account_controls.sql`](supabase/migrations/0008_account_controls.sql)
 9. [`supabase/migrations/0009_admin_monitoring.sql`](supabase/migrations/0009_admin_monitoring.sql)
 10. [`supabase/migrations/0010_password_recovery.sql`](supabase/migrations/0010_password_recovery.sql)
+11. [`supabase/migrations/0011_security_hardening.sql`](supabase/migrations/0011_security_hardening.sql)
+12. [`supabase/migrations/0012_google_auth.sql`](supabase/migrations/0012_google_auth.sql)
 
 They create the relational schema, indexes, RLS boundary, private message-media storage, profile-photo storage, groups, security controls, monitoring, and password recovery.
 
@@ -149,6 +160,7 @@ Never expose `SUPABASE_SERVICE_ROLE_KEY` as a `VITE_` variable or commit it. RLS
 | `JWT_REFRESH_SECRET` | Reserved | Kept separate for future signed refresh-token support |
 | `ACCESS_TOKEN_TTL` | No | Defaults to `15m` |
 | `REFRESH_TOKEN_DAYS` | No | Defaults to `30` |
+| `CALL_RECONNECT_GRACE_MS` | No | Grace period for transient call-signaling disconnects; defaults to `12000` |
 | `BCRYPT_ROUNDS` | No | Defaults to `12` |
 | `COOKIE_SECURE` | Production | Set to `true` behind HTTPS |
 | `COOKIE_SAME_SITE` | No | Keep `lax` for the recommended same-origin Render deployment |
@@ -170,7 +182,7 @@ Generate signing secrets with a password manager or `openssl rand -base64 48`.
 
 Email verification is fully wired but can be bypassed temporarily with `REQUIRE_EMAIL_VERIFICATION=false`. On Render Free, set `MAIL_TRANSPORT=gmail-api` and configure the four Gmail OAuth variables before turning verification back on. On other hosts or paid Render plans, SMTP remains available as a fallback. Without a configured provider, development prints the verification code to the API console.
 
-Google OAuth is intentionally feature-flagged off in the web UI. Before enabling it, configure Google as a Supabase Auth provider and add a server-side callback that exchanges the provider identity for a NOVA session. Do not turn on `VITE_GOOGLE_AUTH_ENABLED` until that callback is configured.
+Google Identity Services sign-in is implemented end to end and remains feature-flagged until a buyer-owned Web OAuth client ID is configured. Follow [`docs/GOOGLE_AUTH.md`](docs/GOOGLE_AUTH.md), apply migration `0012`, and set the same public client ID in `GOOGLE_AUTH_CLIENT_ID` and `VITE_GOOGLE_CLIENT_ID`.
 
 ## WebRTC and TURN
 

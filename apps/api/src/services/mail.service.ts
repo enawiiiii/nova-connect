@@ -25,20 +25,20 @@ export class MailDeliveryError extends Error {
 function sender() {
   const configured = env.MAIL_FROM.trim();
   const namedAddress = /^(.*?)\s*<([^<>]+)>$/.exec(configured);
-  if (!namedAddress) return { name: 'NOVA Connect', email: configured };
+  if (!namedAddress) return { name: env.PRODUCT_NAME, email: configured };
   return {
-    name: namedAddress[1]?.trim() || 'NOVA Connect',
+    name: namedAddress[1]?.trim() || env.PRODUCT_NAME,
     email: namedAddress[2]!.trim(),
   };
 }
 
 function verificationEmailContent(username: string, code: string) {
   return {
-    subject: 'رمز تأكيد NOVA Connect',
-    text: `مرحبًا ${username}، رمز تأكيد حسابك في NOVA Connect هو ${code}. ينتهي الرمز خلال 15 دقيقة ولا يمكن استخدامه إلا مرة واحدة.`,
+    subject: `رمز تأكيد ${env.PRODUCT_NAME}`,
+    text: `مرحبًا ${username}، رمز تأكيد حسابك في ${env.PRODUCT_NAME} هو ${code}. ينتهي الرمز خلال 15 دقيقة ولا يمكن استخدامه إلا مرة واحدة.`,
     html: `
       <div dir="rtl" style="max-width:560px;margin:auto;padding:32px;background:#0d101a;color:#f4f4f7;border-radius:18px;font-family:Arial,sans-serif">
-        <div style="color:#a78bfa;font-size:12px;letter-spacing:2px">NOVA CONNECT</div>
+        <div style="color:#a78bfa;font-size:12px;letter-spacing:2px">${env.PRODUCT_NAME}</div>
         <h1 style="font-size:24px;margin:18px 0 10px">تأكيد بريدك الإلكتروني</h1>
         <p style="color:#b5b7c2;line-height:1.8">مرحبًا ${username}، أدخل الرمز التالي لإكمال إنشاء حسابك:</p>
         <div dir="ltr" style="margin:24px 0;padding:18px;text-align:center;font:700 34px monospace;letter-spacing:10px;background:#171225;border:1px solid #4c3479;border-radius:14px;color:#d8ccff">${code}</div>
@@ -254,9 +254,9 @@ export async function sendPasswordResetEmail(email: string, username: string, to
   const hasSmtp = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
   const hasGmailApi = Boolean(env.GMAIL_CLIENT_ID && env.GMAIL_CLIENT_SECRET && env.GMAIL_REFRESH_TOKEN && env.GMAIL_SENDER);
   const selectedTransport = env.MAIL_TRANSPORT ?? (hasGmailApi ? 'gmail-api' : env.BREVO_API_KEY ? 'brevo' : 'smtp');
-  const subject = 'Reset your NOVA Connect password';
-  const text = `Hi ${username}, reset your password: ${resetUrl}. This link expires in one hour.`;
-  const html = `<p>Hi ${username},</p><p><a href="${resetUrl}">Reset your NOVA Connect password</a>. This link expires in one hour.</p>`;
+  const subject = `Reset your ${env.PRODUCT_NAME} password`;
+  const text = `Hi ${username}, reset your ${env.PRODUCT_NAME} password: ${resetUrl}. This link expires in one hour.`;
+  const html = `<p>Hi ${username},</p><p><a href="${resetUrl}">Reset your ${env.PRODUCT_NAME} password</a>. This link expires in one hour.</p>`;
   if (selectedTransport === 'gmail-api' && hasGmailApi) return sendWithGmailApi(email, subject, text, html);
   if (selectedTransport === 'brevo' && env.BREVO_API_KEY) {
     return brevoRequest({

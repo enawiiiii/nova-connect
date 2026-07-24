@@ -31,6 +31,7 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
   const localVideo = useRef<HTMLVideoElement>(null);
   const localStream = useRef<MediaStream | null>(null);
   const peers = useRef(new Map<string, RTCPeerConnection>());
+  const iceRestartTimers = useRef(new Map<string, number>());
   const iceServers = useRef<RTCIceServer[]>(fallbackIceServers);
   const pendingCandidates = useRef(new Map<string, RTCIceCandidateInit[]>());
   const leaveRoomAction = useRef<() => void>(() => undefined);
@@ -71,22 +72,37 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
     };
     peer.onconnectionstatechange = () => {
       if (peer.connectionState === 'connected') {
+        const restartTimer = iceRestartTimers.current.get(userId);
+        if (restartTimer) window.clearTimeout(restartTimer);
+        iceRestartTimers.current.delete(userId);
         setReconnecting(false);
         setQuality((current) => current === 'connecting' ? 'good' : current);
       } else if (['failed', 'disconnected'].includes(peer.connectionState)) {
         setReconnecting(true);
         setQuality('poor');
-        try {
-          peer.restartIce();
-          void peer.createOffer({ iceRestart: true }).then(async (offer) => {
-            await peer.setLocalDescription(offer);
-            getSocket()?.emit('webrtc:signal', { roomId, targetUserId: userId, description: peer.localDescription });
-          }).catch(() => undefined);
-        } catch {
-          // A later socket reconnect can retry signaling.
+        const localUserId = useAuthStore.getState().user?.id ?? '';
+        if (!iceRestartTimers.current.has(userId) && (!localUserId || localUserId.localeCompare(userId) < 0)) {
+          const delay = peer.connectionState === 'failed' ? 500 : 3_000;
+          const timer = window.setTimeout(() => {
+            iceRestartTimers.current.delete(userId);
+            if (!['failed', 'disconnected'].includes(peer.connectionState)) return;
+            try {
+              peer.restartIce();
+              void peer.createOffer({ iceRestart: true }).then(async (offer) => {
+                await peer.setLocalDescription(offer);
+                getSocket()?.emit('webrtc:signal', { roomId, targetUserId: userId, description: peer.localDescription });
+              }).catch(() => undefined);
+            } catch {
+              // A later socket reconnect can retry signaling.
+            }
+          }, delay);
+          iceRestartTimers.current.set(userId, timer);
         }
       }
       if (peer.connectionState === 'closed') {
+        const restartTimer = iceRestartTimers.current.get(userId);
+        if (restartTimer) window.clearTimeout(restartTimer);
+        iceRestartTimers.current.delete(userId);
         setRemotePeers((items) => items.filter((item) => item.userId !== userId));
       }
     };
@@ -100,6 +116,7 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
     const socket = getSocket();
     const peerMap = peers.current;
     const candidateMap = pendingCandidates.current;
+    const restartTimerMap = iceRestartTimers.current;
     const token = useAuthStore.getState().accessToken;
     let hasJoined = demo;
     let leaveSent = false;
@@ -173,6 +190,8 @@ export function useWebRtcRoom(roomId: string, type: 'voice' | 'video', demo: boo
       peerMap.forEach((peer) => peer.close());
       peerMap.clear();
       candidateMap.clear();
+      restartTimerMap.forEach((timer) => window.clearTimeout(timer));
+      restartTimerMap.clear();
       localStream.current?.getTracks().forEach((track) => track.stop());
       localStream.current = null;
       setRemotePeers([]);

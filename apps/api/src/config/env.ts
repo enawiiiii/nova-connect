@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  PRODUCT_NAME: z.string().trim().min(1).max(80).default('NOVA Connect'),
   PORT: z.coerce.number().int().positive().default(4000),
   CLIENT_URL: z.string().default('http://localhost:5173').refine(
     (value) => value.split(',').every((origin) => URL.canParse(origin.trim())),
@@ -15,10 +16,13 @@ const schema = z.object({
   JWT_REFRESH_SECRET: z.string().min(32).default('development-refresh-secret-change-me'),
   ACCESS_TOKEN_TTL: z.string().default('15m'),
   REFRESH_TOKEN_DAYS: z.coerce.number().int().positive().max(400).default(400),
+  CALL_RECONNECT_GRACE_MS: z.coerce.number().int().min(100).max(60_000).default(12_000),
   BCRYPT_ROUNDS: z.coerce.number().int().min(10).max(15).default(12),
   COOKIE_SECURE: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   COOKIE_SAME_SITE: z.enum(['lax', 'strict', 'none']).default('lax'),
   REQUIRE_EMAIL_VERIFICATION: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
+  GOOGLE_AUTH_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  GOOGLE_AUTH_CLIENT_ID: z.string().trim().endsWith('.apps.googleusercontent.com').optional(),
   LOCAL_DEVELOPMENT_MODE: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   LOCAL_DATA_PATH: z.string().default('.local/nova.json'),
   TURN_URL: z.string().optional(),
@@ -60,6 +64,9 @@ if (env.NODE_ENV === 'production') {
   if (!env.COOKIE_SECURE) throw new Error('COOKIE_SECURE must be true in production');
   if (env.COOKIE_SAME_SITE === 'none' && !env.COOKIE_SECURE) throw new Error('SameSite=None cookies must be secure');
   if (!env.CLIENT_URL.split(',').every((origin) => origin.trim().startsWith('https://'))) throw new Error('CLIENT_URL must use HTTPS in production');
+  if (env.GOOGLE_AUTH_ENABLED && !env.GOOGLE_AUTH_CLIENT_ID) {
+    throw new Error('GOOGLE_AUTH_ENABLED=true requires GOOGLE_AUTH_CLIENT_ID');
+  }
   const hasSmtp = Boolean(env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS);
   const hasGmailApi = Boolean(env.GMAIL_CLIENT_ID && env.GMAIL_CLIENT_SECRET && env.GMAIL_REFRESH_TOKEN && env.GMAIL_SENDER);
   if (env.REQUIRE_EMAIL_VERIFICATION && !env.BREVO_API_KEY && !hasSmtp && !hasGmailApi) {

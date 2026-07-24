@@ -26,6 +26,7 @@ const twoFactorLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 5, standar
 
 router.post('/register', registerLimiter, validate(z.object({ body: z.object({ username: z.string().trim().min(3).max(32).regex(/^[A-Za-z0-9_]+$/), email: z.string().trim().email().max(254), password }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.register));
 router.post('/login', loginLimiter, validate(z.object({ body: z.object({ email: z.string().trim().email().max(254), password: z.string().min(1).max(128), totpCode: z.string().regex(/^\d{6}$/).optional() }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.login));
+router.post('/google', loginLimiter, requireTrustedOrigin, validate(z.object({ body: z.object({ credential: z.string().min(100).max(10_000), totpCode: z.string().regex(/^\d{6}$/).optional() }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.google));
 router.post('/refresh', requireTrustedOrigin, asyncHandler(authController.refresh));
 router.post('/logout', requireTrustedOrigin, asyncHandler(authController.logout));
 router.post('/verify-email', verificationLimiter, validate(z.object({ body: z.object({ email: z.string().trim().email().max(254), code: z.string().regex(/^\d{6}$/) }).strict(), query: z.any(), params: z.any() })), asyncHandler(authController.verify));

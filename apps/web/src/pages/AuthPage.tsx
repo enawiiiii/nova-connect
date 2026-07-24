@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import type { PublicUser } from '@nova/shared';
 import { Brand } from '../components/Brand';
+import { GoogleSignInButton } from '../components/GoogleSignInButton';
 import { api, ApiError } from '../lib/api';
 import { setLanguage } from '../lib/i18n';
 import { useAuthStore } from '../stores/auth.store';
@@ -21,12 +22,16 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [error, setError] = useState('');
   const [unverified, setUnverified] = useState(false);
   const [requiresTwoFactor, setRequiresTwoFactor] = useState(false);
+  const [googleCredential, setGoogleCredential] = useState<string | null>(null);
+  const [googleTotpCode, setGoogleTotpCode] = useState('');
   const [verification, setVerification] = useState<{ email: string; emailSent: boolean; verificationCode?: string } | null>(null);
   const [values, setValues] = useState({ username: '', email: '', password: '', totpCode: '' });
   useEffect(() => {
     setVerification(null);
     setUnverified(false);
     setRequiresTwoFactor(false);
+    setGoogleCredential(null);
+    setGoogleTotpCode('');
     setVerificationCode('');
     setResendIn(0);
     setError('');
@@ -131,6 +136,43 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
       setVerifying(false);
     }
   };
+
+  const authenticateWithGoogle = async (credential: string, totpCode?: string) => {
+    setError('');
+    setLoading(true);
+    try {
+      const result = await api<{ user: PublicUser; accessToken: string }>('/auth/google', {
+        method: 'POST',
+        body: { credential, ...(totpCode ? { totpCode } : {}) },
+      });
+      setSession(result.user, result.accessToken);
+      navigate('/app/chats');
+    } catch (reason) {
+      if (reason instanceof ApiError && reason.code === 'TWO_FACTOR_REQUIRED') {
+        setGoogleCredential(credential);
+        setError('أدخل رمز المصادقة الثنائية الخاص بحساب NOVA لإكمال الدخول.');
+      } else if (reason instanceof ApiError && reason.code === 'ACCOUNT_LINK_REQUIRED') {
+        setGoogleCredential(null);
+        setError('يوجد حساب NOVA بهذا البريد. سجّل الدخول بكلمة المرور أولًا قبل ربط Google.');
+      } else {
+        setGoogleCredential(null);
+        setError(reason instanceof ApiError ? reason.message : 'تعذر تسجيل الدخول باستخدام Google.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitGoogleTotp = (event: FormEvent) => {
+    event.preventDefault();
+    if (googleCredential && /^\d{6}$/.test(googleTotpCode)) {
+      void authenticateWithGoogle(googleCredential, googleTotpCode);
+    }
+  };
+
+  const googleEnabled = import.meta.env.VITE_GOOGLE_AUTH_ENABLED === 'true'
+    && Boolean(import.meta.env.VITE_GOOGLE_CLIENT_ID);
+
   return (
     <div className="auth-page">
       <aside className="auth-art"><div className="ambient ambient-one" /><Link className="back-link" to="/"><ArrowLeft /> Back home</Link><div className="auth-quote"><span><Sparkles /> PRIVATE CIRCLES</span><blockquote>“The best conversations don’t need an audience.”</blockquote><p>NOVA gives your closest friendships room to breathe.</p></div><div className="auth-orbit"><i /><i /><i /><span>N</span></div></aside>
@@ -182,8 +224,38 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           ) : (
             <>
           <div className="auth-heading"><span>{mode === 'login' ? 'WELCOME / BACK' : 'YOUR ORBIT / AWAITS'}</span><h1>{t(mode === 'login' ? 'auth.welcome' : 'auth.join')}</h1><p>{t(mode === 'login' ? 'auth.loginBody' : 'auth.registerBody')}</p></div>
-          {import.meta.env.VITE_GOOGLE_AUTH_ENABLED === 'true' && <button className="google-button"><b>G</b>{t('auth.google')}</button>}
-          {import.meta.env.VITE_GOOGLE_AUTH_ENABLED === 'true' && <div className="auth-divider"><span>{t('auth.divider')}</span></div>}
+          {googleEnabled && !googleCredential && (
+            <GoogleSignInButton
+              clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID!}
+              mode={mode}
+              onCredential={(credential) => void authenticateWithGoogle(credential)}
+              onError={setError}
+            />
+          )}
+          {googleEnabled && googleCredential && (
+            <form className="google-two-factor" onSubmit={submitGoogleTotp}>
+              <label htmlFor="google-totp-code">رمز المصادقة الثنائية لحساب NOVA</label>
+              <input
+                id="google-totp-code"
+                required
+                autoFocus
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="\d{6}"
+                maxLength={6}
+                value={googleTotpCode}
+                onChange={(event) => setGoogleTotpCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+              />
+              <button className="button button-primary" disabled={loading || googleTotpCode.length !== 6}>
+                {loading ? 'جارٍ التحقق…' : 'إكمال الدخول'}
+              </button>
+              <button type="button" className="verification-login" onClick={() => { setGoogleCredential(null); setGoogleTotpCode(''); setError(''); }}>
+                اختيار حساب Google آخر
+              </button>
+            </form>
+          )}
+          {googleEnabled && <div className="auth-divider"><span>{t('auth.divider')}</span></div>}
           <form onSubmit={submit}>
             {mode === 'register' && <label><span>{t('auth.username')}</span><input required minLength={3} maxLength={32} pattern="[A-Za-z0-9_]+" title="استخدم الأحرف الإنجليزية والأرقام والشرطة السفلية فقط" autoComplete="username" value={values.username} onChange={(event) => setValues({ ...values, username: event.target.value })} placeholder="your_nova_name" /></label>}
             <label><span>{t('auth.email')}</span><input required type="email" maxLength={254} autoComplete="email" value={values.email} onChange={(event) => setValues({ ...values, email: event.target.value })} placeholder="you@example.com" /></label>
@@ -199,7 +271,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             </>
           )}
         </div>
-        <p className="auth-legal">By continuing, you agree to our Terms and Privacy Policy.</p>
+        <p className="auth-legal">By continuing, you agree to our <Link to="/terms">Terms</Link> and <Link to="/privacy">Privacy Policy</Link>.</p>
       </main>
     </div>
   );

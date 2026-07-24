@@ -34,6 +34,11 @@ export const authController = {
     res.cookie('nova_refresh', result.refreshToken, refreshCookieOptions);
     res.json({ data: { user: result.user, accessToken: result.accessToken } });
   },
+  async google(req: Request, res: Response) {
+    const result = await authService.google(req.body, { userAgent: req.get('user-agent'), ip: req.ip });
+    res.cookie('nova_refresh', result.refreshToken, refreshCookieOptions);
+    res.json({ data: { user: result.user, accessToken: result.accessToken, created: result.created } });
+  },
   async refresh(req: Request, res: Response) {
     const result = await authService.refresh(req.cookies.nova_refresh);
     res.cookie('nova_refresh', result.refreshToken, refreshCookieOptions);

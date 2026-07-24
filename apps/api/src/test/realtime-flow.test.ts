@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 process.env.LOCAL_DEVELOPMENT_MODE = 'true';
 process.env.LOCAL_DATA_PATH = `.local/vitest-realtime-${process.pid}.json`;
 process.env.BCRYPT_ROUNDS = '10';
+process.env.CALL_RECONNECT_GRACE_MS = '250';
 
 let app: Express;
 let server: HttpServer;
@@ -107,7 +108,7 @@ describe('authenticated realtime flow', () => {
     expect(adminReports.body.data.summary.open).toBeGreaterThan(0);
 
     const firstSocket = await connectedClient(first.accessToken);
-    const secondSocket = await connectedClient(second.accessToken);
+    let secondSocket = await connectedClient(second.accessToken);
     try {
       const receivedMessage = new Promise<Record<string, unknown>>((resolve) => secondSocket.once('message:new', resolve));
       const messageAck = await firstSocket.timeout(5_000).emitWithAck('message:send', { receiverId: second.id, text: 'Realtime works' }) as { data?: Record<string, unknown>; error?: string };
@@ -152,6 +153,18 @@ describe('authenticated realtime flow', () => {
 
       const answered = await first.agent.get('/api/v1/calls').set(auth(first.accessToken));
       expect(answered.body.data.find((item: { id: string }) => item.id === call.body.data.id).status).toBe('answered');
+
+      let endedDuringReconnect = false;
+      const unexpectedEnd = () => { endedDuringReconnect = true; };
+      firstSocket.on('call:ended', unexpectedEnd);
+      secondSocket.disconnect();
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      secondSocket = await connectedClient(second.accessToken);
+      const rejoined = await secondSocket.timeout(5_000).emitWithAck('call:join', { roomId }) as { data?: { participants: string[] }; error?: string };
+      expect(rejoined.error).toBeUndefined();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      firstSocket.off('call:ended', unexpectedEnd);
+      expect(endedDuringReconnect).toBe(false);
 
       const endedEvent = new Promise<{ roomId: string }>((resolve) => firstSocket.once('call:ended', resolve));
       secondSocket.emit('call:leave', { roomId });
